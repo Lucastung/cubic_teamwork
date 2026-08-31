@@ -342,6 +342,36 @@ app.post('/api/nodes/:id/stage', async c => {
   return c.json({ error: '未知的動作' }, 400);
 });
 
+/* ── 留言（物件層共通）── */
+app.get('/api/comments', async c => {
+  const type = c.req.query('type'), id = Number(c.req.query('id'));
+  if (!type || !id) return c.json([]);
+  const { results } = await c.env.DB.prepare(
+    `SELECT cm.id, cm.body, cm.created_at, cm.author_id, u.name AS author, u.color
+     FROM comments cm JOIN users u ON u.id = cm.author_id
+     WHERE cm.entity_type = ? AND cm.entity_id = ? ORDER BY cm.id`
+  ).bind(type, id).all();
+  return c.json(results);
+});
+app.post('/api/comments', async c => {
+  const u = c.get('user');
+  const { entity_type, entity_id, body } = await c.req.json();
+  if (!entity_type || !entity_id || !body?.trim()) return c.json({ error: '留言內容不可為空' }, 400);
+  const r = await c.env.DB.prepare(
+    'INSERT INTO comments (entity_type, entity_id, author_id, body) VALUES (?, ?, ?, ?)'
+  ).bind(entity_type, Number(entity_id), u.id, body.trim()).run();
+  return c.json({ id: r.meta.last_row_id });
+});
+app.delete('/api/comments/:id', async c => {
+  const u = c.get('user');
+  const id = Number(c.req.param('id'));
+  const cm = await c.env.DB.prepare('SELECT * FROM comments WHERE id = ?').bind(id).first<any>();
+  if (!cm) return c.json({ error: '找不到留言' }, 404);
+  if (cm.author_id !== u.id && u.role !== 'admin') return c.json({ error: '只能刪除自己的留言' }, 403);
+  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
 app.get('/api/nodes/:id/signatures', async c => {
   const id = Number(c.req.param('id'));
   const { results } = await c.env.DB.prepare(

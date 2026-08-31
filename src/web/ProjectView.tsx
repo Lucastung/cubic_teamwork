@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, Node, Dep, User, Project } from './api';
 import { Model, STATE_LABEL, fdate, todayStr } from './model';
 import { DocEditor, EntityDocs } from './DocsPage';
+import { Comments } from './Comments';
 
 function Ring({ pct, size }: { pct: number; size: number }) {
   const r = (size - 6) / 2, C = 2 * Math.PI * r, on = C * pct;
@@ -371,6 +372,9 @@ function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDe
 
       <div className="sect-label">掛在這個{KIND_LABEL[n.kind]}上的文件</div>
       <EntityDocs entityType="node" entityId={n.id} me={me} onOpenDoc={onOpenDoc} />
+
+      <div className="sect-label">留言討論</div>
+      <Comments entityType="node" entityId={n.id} me={me} includeEvents={false} />
 
       <div style={{ marginTop: 18, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
         <button className="btn subtle" onClick={async () => {

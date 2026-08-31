@@ -142,7 +142,10 @@ docsApp.get('/docs/:id', async c => {
   if (r instanceof Response) return r;
   const v = await c.env.DB.prepare('SELECT * FROM doc_versions WHERE id = ?').bind(r.doc.current_version_id).first<any>();
   const links = (await c.env.DB.prepare('SELECT entity_type, entity_id FROM doc_links WHERE doc_id = ?').bind(r.doc.id).all()).results;
-  return c.json({ ...r.doc, my_level: r.level, content_json: v?.content_json ?? '{}', version_no: v?.version_no ?? 1, links });
+  return c.json({
+    ...r.doc, my_level: r.level, content_json: v?.content_json ?? '{}',
+    content_html: v?.content_html ?? '', version_no: v?.version_no ?? 1, links,
+  });
 });
 
 docsApp.patch('/docs/:id', async c => {

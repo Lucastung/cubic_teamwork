@@ -416,3 +416,16 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .sign-box input{background:var(--surface)}
 .sig-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;flex-wrap:wrap}
 .sig-hash{font-size:10.5px;color:var(--muted);margin-left:auto;cursor:help}
+
+/* ═══ 留言時間軸 ═══ */
+.cmt-wrap{display:flex;flex-direction:column;gap:8px}
+.cmt{display:flex;gap:9px;align-items:flex-start}
+.cmt-body{flex:1;min-width:0}
+.cmt-meta{display:flex;align-items:center;gap:8px;font-size:12.5px;flex-wrap:wrap}
+.cmt-meta .muted{font-size:11.5px}
+.cmt-text{font-size:13.5px;line-height:1.6;white-space:pre-wrap;margin-top:1px}
+.cmt.event .cmt-text{color:var(--muted);font-size:12.5px}
+.cmt-input{display:flex;gap:8px;margin-top:4px}
+.cmt-input input{flex:1;font-size:13px;padding:6px 12px}
+.modal-docs{margin-bottom:4px}
+.doc-preview{max-height:50vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:12px 16px}

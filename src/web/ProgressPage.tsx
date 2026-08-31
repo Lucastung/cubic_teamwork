@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, Node, Dep, User } from './api';
 import { Model, STATE_LABEL, fdate, todayStr } from './model';
+import { Comments } from './Comments';
 
 type Proj = { id: number; name: string };
 const DAY = 86400000;
@@ -81,6 +82,11 @@ export function TaskDetailModal({ model, t, pname, me, onClose, onChanged }: {
   const [pw, setPw] = useState('');
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
+  const [docs, setDocs] = useState<any[]>([]);
+  const [preview, setPreview] = useState<any>(null);
+  useEffect(() => {
+    api.get<any[]>(`/api/entity-docs?type=node&id=${t.id}`).then(setDocs).catch(() => {});
+  }, [t.id]);
   const s = model.stateOf(t);
   const today = todayStr();
   const over = !['done', 'signed', 'closed'].includes(s) && !!t.due && t.due < today;
@@ -105,6 +111,15 @@ export function TaskDetailModal({ model, t, pname, me, onClose, onChanged }: {
   return (
     <>
       <div className="scrim show" onClick={onClose} />
+      {preview ? (
+        <div className="modal-card" role="dialog" aria-label={preview.title}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <button className="btn" onClick={() => setPreview(null)}>← 返回任務</button>
+            <b>{preview.title}</b>
+          </div>
+          <div className="tiptap readonly doc-preview" dangerouslySetInnerHTML={{ __html: preview.content_html || '<p class="muted">（空白文件）</p>' }} />
+        </div>
+      ) : (
       <div className="modal-card" role="dialog" aria-label={t.title}>
         <div className="eyebrow">{pname.get(t.project_id) ?? ''}{path.length ? '／' + path.join('／') : ''}</div>
         <h3 style={{ margin: '4px 0 8px' }}>{t.title}</h3>
@@ -124,6 +139,19 @@ export function TaskDetailModal({ model, t, pname, me, onClose, onChanged }: {
             {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組' : ''}</span>)}
           </div>
         )}
+        {docs.length > 0 && (
+          <div className="modal-docs">
+            <div className="sect-label" style={{ marginTop: 8 }}>附件文件（{docs.length}）</div>
+            {docs.map(d => (
+              <button key={d.id} className="edoc-open" style={{ display: 'block', padding: '3px 0' }}
+                onClick={async () => setPreview(await api.get(`/api/docs/${d.id}`))}>
+                📄 {d.title || '未命名文件'}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="sect-label" style={{ marginTop: 10 }}>討論與記錄</div>
+        <Comments entityType="node" entityId={t.id} me={me} />
         {box === 'sign' && (
           <div className="sign-box">
             <p className="muted" style={{ margin: '0 0 6px', fontSize: 12.5 }}>簽核代表你以第二人身分核實此任務，簽核後鎖定。請輸入密碼確認本人：</p>
@@ -153,6 +181,7 @@ export function TaskDetailModal({ model, t, pname, me, onClose, onChanged }: {
           <button className="btn" onClick={onClose}>關閉</button>
         </div>
       </div>
+      )}
     </>
   );
 }
