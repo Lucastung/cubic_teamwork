@@ -348,3 +348,46 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .pf>span:first-child{color:var(--muted);font-size:12px;width:64px;flex:none}
 .pf select,.pf input{width:auto;font-size:13px;padding:4px 8px}
 .sect-label{font-size:11.5px;letter-spacing:.1em;color:var(--muted);font-weight:500;text-transform:uppercase;margin:16px 0 8px;border-top:1px solid var(--line);padding-top:12px}
+
+/* ═══ 首頁 Banner 與待辦 ═══ */
+.banner{
+  background:linear-gradient(115deg,var(--accent-soft),var(--surface));
+  border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:20px 24px;margin-bottom:14px;
+}
+.banner-date{font-size:12px;color:var(--muted);letter-spacing:.05em;margin-bottom:4px}
+.banner-line{font-size:16.5px;line-height:1.6}
+.banner-line b{color:var(--accent)}
+.banner-over{color:var(--danger)}
+.mytasks{margin-bottom:18px;padding:14px 18px}
+.mytask-row{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  border:none;background:none;color:var(--ink);font-size:14px;cursor:pointer;
+  padding:8px 6px;border-bottom:1px solid var(--surface-2);border-radius:6px;
+}
+.mytask-row:last-of-type{border-bottom:none}
+.mytask-row:hover{background:var(--surface-2)}
+.mytask-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.mytask-title{font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mytask-proj{font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tdot{width:10px;height:10px;border-radius:50%;flex:none}
+.tdot.ready{background:var(--accent)}
+.tdot.locked{background:var(--locked)}
+.tdot.done{background:var(--ok)}
+
+/* ═══ 詳情彈窗與說明 ═══ */
+.modal-card{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(480px,92vw);max-height:80vh;overflow-y:auto;z-index:30;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 10px 40px rgba(0,0,0,.25);padding:20px 22px;
+}
+.modal-desc{font-size:14px;line-height:1.7;white-space:pre-wrap;margin:6px 0 10px}
+.panel-desc{
+  width:100%;font-family:inherit;font-size:13.5px;line-height:1.6;resize:vertical;
+  border:1px solid var(--line);border-radius:8px;padding:8px 12px;
+  background:var(--surface);color:var(--ink);margin-bottom:10px;
+}
+.panel-desc:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.stream .tcard{text-align:left;font-family:inherit;color:var(--ink);cursor:pointer}
+.stream .tcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

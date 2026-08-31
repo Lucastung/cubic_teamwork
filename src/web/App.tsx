@@ -3,7 +3,9 @@ import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
-import { ProgressPage } from './ProgressPage';
+import { ProgressPage, TaskDetailModal } from './ProgressPage';
+import { Model, STATE_LABEL, fdate, todayStr } from './model';
+import type { Node, Dep } from './api';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -96,10 +98,25 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
 function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) => void; onLogout: () => void }) {
   const [projCount, setProjCount] = useState<number | null>(null);
   const [userCount, setUserCount] = useState<number | null>(null);
-  useEffect(() => {
-    api.get<Project[]>('/api/projects').then(p => setProjCount(p.length)).catch(() => {});
-    api.get<User[]>('/api/users').then(u => setUserCount(u.length)).catch(() => {});
-  }, []);
+  const [prog, setProg] = useState<{ projects: { id: number; name: string }[]; nodes: Node[]; deps: Dep[] } | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [openTask, setOpenTask] = useState<number | null>(null);
+  const load = () => {
+    api.get<any>('/api/progress').then(d => { setProg(d); setProjCount(d.projects.length); }).catch(() => {});
+    api.get<User[]>('/api/users').then(u => { setUsers(u); setUserCount(u.length); }).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+
+  const model = prog ? new Model(prog.nodes, prog.deps, users) : null;
+  const pname = new Map((prog?.projects ?? []).map(p => [p.id, p.name]));
+  const today = todayStr();
+  const myTasks = model
+    ? model.allTasks().filter(t => t.owner_id === user.id && !t.done)
+        .sort((a, b) => ((a.due ?? '9999') < (b.due ?? '9999') ? -1 : 1))
+    : [];
+  const readyN = model ? myTasks.filter(t => model.stateOf(t) === 'ready').length : 0;
+  const overN = myTasks.filter(t => t.due && t.due < today).length;
+  const shown = myTasks.slice(0, 8);
 
   return (
     <div className="app">
@@ -113,6 +130,47 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <button className="btn" onClick={onLogout}>登出</button>
         </div>
       </header>
+
+      <div className="banner">
+        <div className="banner-main">
+          <div className="banner-date mono">{new Date().toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' })}</div>
+          <div className="banner-line">
+            {myTasks.length === 0
+              ? '今天河流裡沒有待辦任務，輕鬆的一天。'
+              : <>你的河流裡有 <b>{myTasks.length}</b> 項待完成{readyN > 0 && <>，其中 <b>{readyN}</b> 項現在可以開始</>}{overN > 0 && <>，<b className="banner-over">{overN} 項已逾期</b></>}。</>}
+          </div>
+        </div>
+      </div>
+
+      {shown.length > 0 && (
+        <div className="mytasks card">
+          <div className="side-label" style={{ margin: '0 0 6px', display: 'flex', justifyContent: 'space-between' }}>
+            <span>我的待辦（依 deadline）</span>
+            <button className="btn subtle" onClick={() => onOpen('progress')}>進度管理 →</button>
+          </div>
+          {shown.map(t => {
+            const s = model!.stateOf(t);
+            const over = !!t.due && t.due < today;
+            return (
+              <button key={t.id} className="mytask-row" onClick={() => setOpenTask(t.id)}>
+                <span className={`tdot ${s}`} aria-hidden="true" />
+                <span className="mytask-title">{t.title}</span>
+                <span className="muted mytask-proj">{pname.get(t.project_id) ?? ''}</span>
+                <span className={`due mono ${over ? 'over' : ''}`}>{over ? '逾期 ' : ''}{t.due ? fdate(t.due) : '—'}</span>
+                <span className="state-lab" style={{ width: 'auto' }}>{s === 'locked' ? '等前置' : STATE_LABEL[s]}</span>
+              </button>
+            );
+          })}
+          {myTasks.length > shown.length && (
+            <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>還有 {myTasks.length - shown.length} 項，到「進度管理」看完整河流。</p>
+          )}
+        </div>
+      )}
+
+      {openTask != null && model?.byId(openTask) && (
+        <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname}
+          onClose={() => setOpenTask(null)} onChanged={load} />
+      )}
 
       <div className="tile-grid">
         <button className="tile" onClick={() => onOpen('projects')}>

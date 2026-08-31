@@ -233,7 +233,7 @@ app.patch('/api/nodes/:id', async c => {
   if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['title', 'mode', 'owner_id', 'due', 'due_offset', 'role_hint', 'sort', 'parent_id'] as const) {
+  for (const k of ['title', 'mode', 'owner_id', 'due', 'due_offset', 'role_hint', 'description', 'sort', 'parent_id'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k]); }
   }
   if ('done' in body) {

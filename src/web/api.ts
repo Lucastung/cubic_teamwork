@@ -23,6 +23,6 @@ export type Node = {
   id: number; project_id: number; parent_id: number | null;
   kind: 'module' | 'group' | 'task'; title: string; mode: 'seq' | 'free';
   owner_id: number | null; due: string | null; due_offset: number | null; role_hint: string | null;
-  done: number; sort: number;
+  description: string | null; done: number; sort: number;
 };
 export type Dep = { node_id: number; depends_on: number };

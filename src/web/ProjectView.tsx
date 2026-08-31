@@ -308,6 +308,9 @@ function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDe
       <div className="eyebrow">{path.length ? path.join('／') + '／' : ''}{KIND_LABEL[n.kind]}</div>
       <input className="panel-title-input" defaultValue={n.title} aria-label="名稱"
         onBlur={e => { if (e.target.value.trim() && e.target.value !== n.title) patch(n.id, { title: e.target.value.trim() }); }} />
+      <textarea className="panel-desc" defaultValue={n.description ?? ''} placeholder="說明…（做什麼、驗收標準、注意事項）"
+        aria-label="說明" rows={3}
+        onBlur={e => { if ((e.target.value || null) !== (n.description ?? null)) patch(n.id, { description: e.target.value || null }); }} />
 
       {isTask ? (
         <div className="panel-fields">

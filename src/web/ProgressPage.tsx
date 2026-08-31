@@ -12,10 +12,12 @@ export function ProgressPage({ me, onHome }: { me: User; onHome: () => void }) {
   const [view, setView] = useState<'river' | 'gantt'>('river');
   const [sel, setSel] = useState<Set<number> | null>(null); // null = 全選
 
-  useEffect(() => {
+  const [openTask, setOpenTask] = useState<number | null>(null);
+  const load = () => {
     api.get<any>('/api/progress').then(setData);
     api.get<User[]>('/api/users').then(setUsers);
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
 
   const model = useMemo(() => data ? new Model(data.nodes, data.deps, users) : null, [data, users]);
   if (!data || !model) return <div className="app"><p className="muted">載入中…</p></div>;
@@ -60,14 +62,65 @@ export function ProgressPage({ me, onHome }: { me: User; onHome: () => void }) {
       </div>
 
       {view === 'river'
-        ? <CrossRiver model={model} tasks={tasks} pname={pname} />
+        ? <CrossRiver model={model} tasks={tasks} pname={pname} onOpen={setOpenTask} />
         : <Gantt model={model} tasks={tasks} projects={data.projects.filter(p => selected.has(p.id))} />}
+
+      {openTask != null && model.byId(openTask) && (
+        <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname}
+          onClose={() => setOpenTask(null)} onChanged={load} />
+      )}
     </div>
   );
 }
 
+/* ═══ 任務詳情彈窗（河流／首頁共用）═══ */
+export function TaskDetailModal({ model, t, pname, onClose, onChanged }: {
+  model: Model; t: Node; pname: Map<number, string>; onClose: () => void; onChanged: () => void;
+}) {
+  const s = model.stateOf(t);
+  const today = todayStr();
+  const over = !t.done && !!t.due && t.due < today;
+  const owner = model.user(t.owner_id);
+  const unmet = model.unmetChain(t);
+  const path: string[] = [];
+  let p = t.parent_id != null ? model.byId(t.parent_id) : undefined;
+  while (p) { path.unshift(p.title); p = p.parent_id != null ? model.byId(p.parent_id) : undefined; }
+  return (
+    <>
+      <div className="scrim show" onClick={onClose} />
+      <div className="modal-card" role="dialog" aria-label={t.title}>
+        <div className="eyebrow">{pname.get(t.project_id) ?? ''}{path.length ? '／' + path.join('／') : ''}</div>
+        <h3 style={{ margin: '4px 0 8px' }}>{t.title}</h3>
+        <div className="panel-stats" style={{ marginBottom: 10 }}>
+          <span className={`stchip ${s === 'done' ? 'st-green' : s === 'ready' ? 'st-blue' : 'st-grey'}`}>{STATE_LABEL[s]}</span>
+          {owner && <span>負責人：{owner.name}</span>}
+          <span className={over ? 'due over' : ''}>{over ? '逾期 ' : 'deadline '}{t.due ? fdate(t.due) : '未設'}</span>
+        </div>
+        {t.description
+          ? <p className="modal-desc">{t.description}</p>
+          : <p className="modal-desc muted">（沒有說明——可在專案頁點選這個任務補上）</p>}
+        {unmet.length > 0 && (
+          <div className="chips" style={{ marginBottom: 10 }}>
+            {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組' : ''}</span>)}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          {s !== 'locked' && (
+            <button className={`btn ${t.done ? '' : 'primary'}`} onClick={async () => {
+              await api.patch(`/api/nodes/${t.id}`, { done: !t.done });
+              await onChanged();
+              onClose();
+            }}>{t.done ? '標記未完成' : '標記完成'}</button>
+          )}
+          <button className="btn" onClick={onClose}>關閉</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /* ═══ 跨專案河流 ═══ */
-function CrossRiver({ model, tasks, pname }: { model: Model; tasks: Node[]; pname: Map<number, string> }) {
+function CrossRiver({ model, tasks, pname, onOpen }: { model: Model; tasks: Node[]; pname: Map<number, string>; onOpen: (id: number) => void }) {
   const today = todayStr();
   const lanes: { key: string; user?: User; mine: Node[] }[] = [];
   for (const u of model.users) {
@@ -98,12 +151,12 @@ function CrossRiver({ model, tasks, pname }: { model: Model; tasks: Node[]; pnam
                 const s = model.stateOf(t);
                 const over = !t.done && !!t.due && t.due < today;
                 return (
-                  <div key={t.id} className={`tcard ${s} ${over ? 'over' : ''}`}>
+                  <button key={t.id} className={`tcard ${s} ${over ? 'over' : ''}`} onClick={() => onOpen(t.id)}>
                     <div className="mod">{pname.get(t.project_id) ?? ''}</div>
                     <div className="tt">{t.title}</div>
                     <div className="meta"><span className="st">{s === 'locked' ? '等前置' : STATE_LABEL[s]}</span>
                       <span className="due mono">{over ? '逾期 ' : ''}{t.due ? fdate(t.due) : '—'}</span></div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
