@@ -156,8 +156,9 @@ function PartyDetail({ id, me, canWrite, onBack }: { id: number; me: User; canWr
 /* ═══ 服務項目 ═══ */
 function ItemsTab({ canWrite }: { canWrite: boolean }) {
   const [list, setList] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   const reload = () => api.get<any[]>('/api/items').then(setList);
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); if (canWrite) api.get<any[]>('/api/templates').then(setTemplates).catch(() => {}); }, []);
   const add = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget), form = e.currentTarget;
@@ -179,12 +180,18 @@ function ItemsTab({ canWrite }: { canWrite: boolean }) {
         </form>
       )}
       <div className="card">
-        <div className="erp-thead"><span style={{ flex: 2 }}>項目</span><span style={{ width: 80 }}>單位</span><span style={{ width: 120, textAlign: 'right' }}>單價</span><span style={{ width: 60 }}></span></div>
+        <div className="erp-thead"><span style={{ flex: 2 }}>項目</span><span style={{ width: 80 }}>單位</span><span style={{ width: 110, textAlign: 'right' }}>單價</span><span style={{ width: 180 }}>交付模版</span><span style={{ width: 60 }}></span></div>
         {list.map(it => (
           <div key={it.id} className="erp-trow" style={{ opacity: it.active ? 1 : 0.45 }}>
             <input style={{ flex: 2 }} defaultValue={it.name} readOnly={!canWrite} onBlur={patch(it.id, 'name')} />
             <input style={{ width: 80 }} defaultValue={it.unit} readOnly={!canWrite} onBlur={patch(it.id, 'unit')} />
-            <input style={{ width: 120, textAlign: 'right' }} type="number" defaultValue={it.price} readOnly={!canWrite} onBlur={patch(it.id, 'price')} />
+            <input style={{ width: 110, textAlign: 'right' }} type="number" defaultValue={it.price} readOnly={!canWrite} onBlur={patch(it.id, 'price')} />
+            <select style={{ width: 180 }} value={it.template_project_id ?? ''} disabled={!canWrite}
+              title="訂單成交開專案時，自動套用這個模版的任務樹"
+              onChange={async e => { await api.patch(`/api/items/${it.id}`, { template_project_id: e.target.value ? Number(e.target.value) : null }); reload(); }}>
+              <option value="">（無模版）</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
             {canWrite && <button className="btn subtle" style={{ width: 60 }}
               onClick={async () => { await api.patch(`/api/items/${it.id}`, { active: it.active ? 0 : 1 }); reload(); }}>
               {it.active ? '停用' : '啟用'}</button>}

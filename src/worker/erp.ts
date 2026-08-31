@@ -40,6 +40,66 @@ const calcLines = (lines: LineIn[]) => {
   return { rows, total: rows.reduce((s, r) => s + r.amount, 0) };
 };
 
+/* ═══ 專案模版 ═══ */
+erpApp.use('/templates/*', writeGuard); erpApp.use('/templates', writeGuard);
+
+erpApp.get('/templates', async c => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.*, (SELECT COUNT(*) FROM nodes n WHERE n.project_id = p.id AND n.kind = 'task') AS task_count
+     FROM projects p WHERE p.kind = 'template' ORDER BY p.id DESC`
+  ).all();
+  return c.json(results);
+});
+erpApp.post('/templates', async c => {
+  const u = c.get('user');
+  const { name } = await c.req.json();
+  if (!name?.trim()) return c.json({ error: '請輸入模版名稱' }, 400);
+  const r = await c.env.DB.prepare(`INSERT INTO projects (name, kind, created_by) VALUES (?, 'template', ?)`)
+    .bind(name.trim(), u.id).run();
+  const pid = r.meta.last_row_id;
+  await c.env.DB.prepare(`INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'lead')`).bind(pid, u.id).run();
+  return c.json({ id: pid });
+});
+
+/** 把模版的整棵任務樹複製進目標專案：相對時程換算成日期、依賴關係重新映射、角色佔位保留 */
+async function applyTemplate(db: D1Database, templateId: number, projectId: number) {
+  const nodes = (await db.prepare('SELECT * FROM nodes WHERE project_id = ? ORDER BY sort, id').bind(templateId).all()).results as any[];
+  if (!nodes.length) return 0;
+  const deps = (await db.prepare(
+    'SELECT d.node_id, d.depends_on FROM deps d JOIN nodes n ON n.id = d.node_id WHERE n.project_id = ?'
+  ).bind(templateId).all()).results as any[];
+  const dueFromOffset = (off: number | null) =>
+    off == null ? null : new Date(Date.now() + off * 86400000).toISOString().slice(0, 10);
+  const idMap = new Map<number, number>();
+  // 由上而下逐層插入（父節點先於子節點）
+  let frontier = nodes.filter(n => n.parent_id == null);
+  while (frontier.length) {
+    for (const n of frontier) {
+      const r = await db.prepare(
+        `INSERT INTO nodes (project_id, parent_id, kind, title, mode, owner_id, due, role_hint, sort)
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+      ).bind(projectId, n.parent_id == null ? null : idMap.get(n.parent_id) ?? null,
+        n.kind, n.title, n.mode, n.kind === 'task' ? dueFromOffset(n.due_offset) : null, n.role_hint, n.sort).run();
+      idMap.set(n.id, r.meta.last_row_id as number);
+    }
+    const doneIds = new Set(idMap.keys());
+    frontier = nodes.filter(n => n.parent_id != null && doneIds.has(n.parent_id) && !idMap.has(n.id));
+  }
+  const depRows = deps.filter(d => idMap.has(d.node_id) && idMap.has(d.depends_on));
+  if (depRows.length) await db.batch(depRows.map(d =>
+    db.prepare('INSERT INTO deps (node_id, depends_on) VALUES (?, ?)').bind(idMap.get(d.node_id), idMap.get(d.depends_on))));
+  return nodes.filter(n => n.kind === 'task').length;
+}
+
+erpApp.post('/projects/:id/apply-template', async c => {
+  const projectId = Number(c.req.param('id'));
+  const { template_id } = await c.req.json();
+  const t = await c.env.DB.prepare(`SELECT id FROM projects WHERE id = ? AND kind = 'template'`).bind(template_id).first();
+  if (!t) return c.json({ error: '找不到模版' }, 404);
+  const n = await applyTemplate(c.env.DB, Number(template_id), projectId);
+  return c.json({ ok: true, tasks: n });
+});
+
 /* ═══ 客戶（Party）═══ */
 erpApp.get('/parties', async c => {
   const { results } = await c.env.DB.prepare(
@@ -111,7 +171,7 @@ erpApp.patch('/items/:id', async c => {
   const id = Number(c.req.param('id'));
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['name', 'unit', 'price', 'description', 'active'] as const) {
+  for (const k of ['name', 'unit', 'price', 'description', 'active', 'template_project_id'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k]); }
   }
   if (!sets.length) return c.json({ ok: true });
@@ -270,6 +330,14 @@ erpApp.post('/orders/:id/create-project', async c => {
   const pid = r.meta.last_row_id as number;
   await c.env.DB.prepare(`INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'lead')`).bind(pid, u.id).run();
   await c.env.DB.prepare('UPDATE orders SET project_id = ? WHERE id = ?').bind(pid, id).run();
-  await logEvent(c.env.DB, 'order', id, '建立交付專案', u.id);
-  return c.json({ project_id: pid });
+  // 訂單明細裡有掛交付模版的服務 → 自動套用（多個服務多個模版都套）
+  const tpls = (await c.env.DB.prepare(
+    `SELECT DISTINCT i.template_project_id AS tid FROM order_lines ol
+     JOIN items i ON i.id = ol.item_id
+     WHERE ol.order_id = ? AND i.template_project_id IS NOT NULL`
+  ).bind(id).all()).results as any[];
+  let taskCount = 0;
+  for (const t of tpls) taskCount += await applyTemplate(c.env.DB, t.tid, pid);
+  await logEvent(c.env.DB, 'order', id, tpls.length ? `建立交付專案（套用 ${tpls.length} 個模版、${taskCount} 項任務）` : '建立交付專案', u.id);
+  return c.json({ project_id: pid, templates_applied: tpls.length, tasks_created: taskCount });
 });

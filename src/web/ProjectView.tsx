@@ -37,6 +37,7 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
 
   if (!model) return <div className="app"><p className="muted">載入中…</p></div>;
 
+  const isTemplate = project.kind === 'template';
   const openModule = (id: number) => { setCurModule(id); setView('tree'); };
 
   return (
@@ -46,18 +47,18 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
           <button className="btn" onClick={onBack}>← 專案列表</button>
         </div>
         <div style={{ flex: 1 }}>
-          <div className="eyebrow">專案</div>
+          <div className="eyebrow">{isTemplate ? '專案模版（時程用 D+N 天、負責人用角色佔位）' : '專案'}</div>
           <h1>{project.name}</h1>
         </div>
         <nav className="tabs" aria-label="檢視切換">
           <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>心智圖</button>
           <button className={view === 'tree' ? 'on' : ''} onClick={() => setView('tree')}>任務樹</button>
-          <button className={view === 'river' ? 'on' : ''} onClick={() => setView('river')}>成員河流</button>
-          <button className={view === 'docs' ? 'on' : ''} onClick={() => setView('docs')}>文件</button>
+          {!isTemplate && <button className={view === 'river' ? 'on' : ''} onClick={() => setView('river')}>成員河流</button>}
+          {!isTemplate && <button className={view === 'docs' ? 'on' : ''} onClick={() => setView('docs')}>文件</button>}
         </nav>
       </header>
       {view === 'map' && <MindMap model={model} project={project} onOpen={openModule} onChanged={reload} />}
-      {view === 'tree' && <TreeView model={model} project={project} moduleId={curModule} onPickModule={setCurModule} onBackToMap={() => setView('map')} onChanged={reload} />}
+      {view === 'tree' && <TreeView model={model} project={project} isTemplate={isTemplate} moduleId={curModule} onPickModule={setCurModule} onBackToMap={() => setView('map')} onChanged={reload} />}
       {view === 'river' && <RiverView model={model} />}
       {view === 'docs' && <ProjectDocs project={project} me={me} />}
     </div>
@@ -145,8 +146,8 @@ function MindMap({ model, project, onOpen, onChanged }: {
 }
 
 /* ═══════════ 任務樹 ═══════════ */
-function TreeView({ model, project, moduleId, onPickModule, onBackToMap, onChanged }: {
-  model: Model; project: Project; moduleId: number | null;
+function TreeView({ model, project, isTemplate, moduleId, onPickModule, onBackToMap, onChanged }: {
+  model: Model; project: Project; isTemplate: boolean; moduleId: number | null;
   onPickModule: (id: number) => void; onBackToMap: () => void; onChanged: () => void;
 }) {
   const modules = model.modules();
@@ -158,8 +159,9 @@ function TreeView({ model, project, moduleId, onPickModule, onBackToMap, onChang
   const addNode = async (kind: 'group' | 'task', parent: number, title: string) => {
     await api.post('/api/nodes', {
       project_id: project.id, parent_id: parent, kind, title,
-      owner_id: kind === 'task' ? model.users[0]?.id ?? null : null,
-      due: kind === 'task' ? todayStr() : null,
+      owner_id: kind === 'task' && !isTemplate ? model.users[0]?.id ?? null : null,
+      due: kind === 'task' && !isTemplate ? todayStr() : null,
+      due_offset: kind === 'task' && isTemplate ? 7 : null,
     });
     await onChanged();
   };
@@ -178,7 +180,7 @@ function TreeView({ model, project, moduleId, onPickModule, onBackToMap, onChang
         <div className="mini-progress"><div className="bar"><i style={{ width: `${total ? done / total * 100 : 0}%` }} /></div><span className="mono">{done}/{total}</span></div>
       </div>
       <div className="tree">
-        <Branch model={model} container={mod} patch={patch} onChanged={onChanged} />
+        <Branch model={model} container={mod} isTemplate={isTemplate} patch={patch} onChanged={onChanged} />
         <AddRow onAdd={t => addNode('task', mod.id, t)} placeholder="＋ 新增子任務（Enter 加入）" />
         <AddRow onAdd={t => addNode('group', mod.id, t)} placeholder="＋ 新增分組（父節點，用來分類與統計）" subtle />
       </div>
@@ -186,8 +188,8 @@ function TreeView({ model, project, moduleId, onPickModule, onBackToMap, onChang
   );
 }
 
-function Branch({ model, container, patch, onChanged }: {
-  model: Model; container: Node; patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
+function Branch({ model, container, isTemplate, patch, onChanged }: {
+  model: Model; container: Node; isTemplate: boolean; patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
   const children = model.kids(container.id);
   return (
@@ -195,15 +197,15 @@ function Branch({ model, container, patch, onChanged }: {
       {children.map((n, i) => {
         const posCls = children.length === 1 ? 'only' : i === 0 ? 'first' : i === children.length - 1 ? 'last' : '';
         return n.kind === 'task'
-          ? <TaskRow key={n.id} model={model} t={n} idx={i} mode={container.mode} posCls={posCls} patch={patch} onChanged={onChanged} />
-          : <GroupBlock key={n.id} model={model} g={n} posCls={posCls} isLast={i === children.length - 1} patch={patch} onChanged={onChanged} />;
+          ? <TaskRow key={n.id} model={model} t={n} idx={i} mode={container.mode} isTemplate={isTemplate} posCls={posCls} patch={patch} onChanged={onChanged} />
+          : <GroupBlock key={n.id} model={model} g={n} posCls={posCls} isTemplate={isTemplate} isLast={i === children.length - 1} patch={patch} onChanged={onChanged} />;
       })}
     </div>
   );
 }
 
-function GroupBlock({ model, g, posCls, isLast, patch, onChanged }: {
-  model: Model; g: Node; posCls: string; isLast: boolean;
+function GroupBlock({ model, g, posCls, isTemplate, isLast, patch, onChanged }: {
+  model: Model; g: Node; posCls: string; isTemplate: boolean; isLast: boolean;
   patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
   const { done, total } = model.progress(g);
@@ -211,7 +213,9 @@ function GroupBlock({ model, g, posCls, isLast, patch, onChanged }: {
   const addTask = async (title: string) => {
     await api.post('/api/nodes', {
       project_id: g.project_id, parent_id: g.id, kind: 'task', title,
-      owner_id: model.users[0]?.id ?? null, due: todayStr(),
+      owner_id: isTemplate ? null : model.users[0]?.id ?? null,
+      due: isTemplate ? null : todayStr(),
+      due_offset: isTemplate ? 7 : null,
     });
     await onChanged();
   };
@@ -234,31 +238,35 @@ function GroupBlock({ model, g, posCls, isLast, patch, onChanged }: {
         </div>
       </div>
       <div className={`nest ${isLast ? 'tail' : ''}`}>
-        <Branch model={model} container={g} patch={patch} onChanged={onChanged} />
+        <Branch model={model} container={g} isTemplate={isTemplate} patch={patch} onChanged={onChanged} />
         <AddRow onAdd={addTask} placeholder="＋ 這組新增任務" subtle />
       </div>
     </>
   );
 }
 
-function TaskRow({ model, t, idx, mode, posCls, patch, onChanged }: {
-  model: Model; t: Node; idx: number; mode: 'seq' | 'free'; posCls: string;
+function TaskRow({ model, t, idx, mode, isTemplate, posCls, patch, onChanged }: {
+  model: Model; t: Node; idx: number; mode: 'seq' | 'free'; isTemplate: boolean; posCls: string;
   patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
   const s = model.stateOf(t);
-  const over = !t.done && !!t.due && t.due < todayStr();
+  const over = !isTemplate && !t.done && !!t.due && t.due < todayStr();
   const unmet = model.unmetChain(t);
   const metExplicit = model.explicitDeps(t).map(d => model.byId(d)!).filter(d => d && model.doneOf(d));
   return (
-    <div className={`row ${s} ${posCls}`}>
-      <button className="node" disabled={s === 'locked'} style={{ fontSize: mode === 'seq' ? 12 : 8 }}
-        aria-label={s === 'done' ? '標記未完成' : '標記完成'}
-        onClick={() => patch(t.id, { done: !t.done })}>
-        {s === 'done' ? '✓' : s === 'locked' ? '🔒' : mode === 'seq' ? idx + 1 : '●'}
-      </button>
+    <div className={`row ${isTemplate ? '' : s} ${posCls}`}>
+      {isTemplate
+        ? <span className="node" style={{ fontSize: mode === 'seq' ? 12 : 8, cursor: 'default' }}>{mode === 'seq' ? idx + 1 : '●'}</span>
+        : <button className="node" disabled={s === 'locked'} style={{ fontSize: mode === 'seq' ? 12 : 8 }}
+            aria-label={s === 'done' ? '標記未完成' : '標記完成'}
+            onClick={() => patch(t.id, { done: !t.done })}>
+            {s === 'done' ? '✓' : s === 'locked' ? '🔒' : mode === 'seq' ? idx + 1 : '●'}
+          </button>}
       <div>
-        <div className="ttl"><span className="name">{t.title}</span></div>
-        {(unmet.length > 0 || metExplicit.length > 0) && s !== 'done' && (
+        <div className="ttl"><span className="name">{t.title}</span>
+          {!isTemplate && t.role_hint && !t.owner_id && <span className="chip">角色：{t.role_hint}</span>}
+        </div>
+        {!isTemplate && (unmet.length > 0 || metExplicit.length > 0) && s !== 'done' && (
           <div className="chips">
             {metExplicit.map(d => <span key={d.id} className="chip met">待「{d.title}」</span>)}
             {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組完成' : ''}{u.inherited ? '（上層條件）' : ''}</span>)}
@@ -267,13 +275,26 @@ function TaskRow({ model, t, idx, mode, posCls, patch, onChanged }: {
         <DepsEditor model={model} n={t} onChanged={onChanged} />
       </div>
       <div className="acts">
-        <input type="date" className="due-input mono" value={t.due ?? ''} onChange={e => patch(t.id, { due: e.target.value || null })} aria-label="deadline" />
-        {over && <span className="due over">逾期</span>}
-        <select className="owner-select" value={t.owner_id ?? ''} onChange={e => patch(t.id, { owner_id: e.target.value ? Number(e.target.value) : null })} aria-label="負責人">
-          <option value="">未指派</option>
-          {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-        <span className="state-lab">{STATE_LABEL[s]}</span>
+        {isTemplate ? (
+          <>
+            <span className="offset-wrap" title="開案後第幾天到期">
+              D+<input type="number" className="offset-input mono" defaultValue={t.due_offset ?? ''} placeholder="—"
+                onBlur={e => patch(t.id, { due_offset: e.target.value === '' ? null : Number(e.target.value) })} aria-label="開案後天數" /> 天
+            </span>
+            <input className="owner-select" defaultValue={t.role_hint ?? ''} placeholder="角色（如：實驗員）"
+              onBlur={e => patch(t.id, { role_hint: e.target.value || null })} aria-label="角色佔位" />
+          </>
+        ) : (
+          <>
+            <input type="date" className="due-input mono" value={t.due ?? ''} onChange={e => patch(t.id, { due: e.target.value || null })} aria-label="deadline" />
+            {over && <span className="due over">逾期</span>}
+            <select className="owner-select" value={t.owner_id ?? ''} onChange={e => patch(t.id, { owner_id: e.target.value ? Number(e.target.value) : null })} aria-label="負責人">
+              <option value="">未指派</option>
+              {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+            <span className="state-lab">{STATE_LABEL[s]}</span>
+          </>
+        )}
         <button className="btn subtle" title="刪除任務" onClick={async () => {
           if (confirm(`刪除任務「${t.title}」？`)) { await api.del(`/api/nodes/${t.id}`); await onChanged(); }
         }}>✕</button>

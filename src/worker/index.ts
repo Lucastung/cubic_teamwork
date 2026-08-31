@@ -138,9 +138,10 @@ app.patch('/api/users/:id', requireRole(['admin']), async c => {
 app.get('/api/projects', async c => {
   const u = c.get('user');
   const sql = u.role === 'admin'
-    ? `SELECT p.*, NULL AS my_role FROM projects p ORDER BY p.id DESC`
+    ? `SELECT p.*, NULL AS my_role FROM projects p WHERE p.kind = 'normal' ORDER BY p.id DESC`
     : `SELECT p.*, m.role AS my_role FROM projects p
        JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
+       WHERE p.kind = 'normal'
        ORDER BY p.id DESC`;
   const stmt = u.role === 'admin' ? c.env.DB.prepare(sql) : c.env.DB.prepare(sql).bind(u.id);
   const { results } = await stmt.all();
@@ -191,7 +192,7 @@ app.get('/api/projects/:id/tree', async c => {
 });
 
 app.post('/api/nodes', async c => {
-  const { project_id, parent_id = null, kind, title, mode = 'free', owner_id = null, due = null } = await c.req.json();
+  const { project_id, parent_id = null, kind, title, mode = 'free', owner_id = null, due = null, due_offset = null, role_hint = null } = await c.req.json();
   if (!(await canAccessProject(c, project_id))) return c.json({ error: '權限不足' }, 403);
   if (!['module', 'group', 'task'].includes(kind) || !title?.trim())
     return c.json({ error: '參數不完整' }, 400);
@@ -199,9 +200,9 @@ app.post('/api/nodes', async c => {
     'SELECT COALESCE(MAX(sort), -1) + 1 AS next FROM nodes WHERE project_id = ? AND parent_id IS ?'
   ).bind(project_id, parent_id).first<{ next: number }>();
   const r = await c.env.DB.prepare(
-    `INSERT INTO nodes (project_id, parent_id, kind, title, mode, owner_id, due, sort)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(project_id, parent_id, kind, title.trim(), mode, owner_id, due, s?.next ?? 0).run();
+    `INSERT INTO nodes (project_id, parent_id, kind, title, mode, owner_id, due, due_offset, role_hint, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(project_id, parent_id, kind, title.trim(), mode, owner_id, due, due_offset, role_hint, s?.next ?? 0).run();
   return c.json({ id: r.meta.last_row_id });
 });
 
@@ -212,7 +213,7 @@ app.patch('/api/nodes/:id', async c => {
   if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['title', 'mode', 'owner_id', 'due', 'sort', 'parent_id'] as const) {
+  for (const k of ['title', 'mode', 'owner_id', 'due', 'due_offset', 'role_hint', 'sort', 'parent_id'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k]); }
   }
   if ('done' in body) {

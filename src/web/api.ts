@@ -18,10 +18,11 @@ export const api = {
 };
 
 export type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
-export type Project = { id: number; name: string; status: string; my_role: string | null };
+export type Project = { id: number; name: string; status: string; kind?: string; my_role: string | null };
 export type Node = {
   id: number; project_id: number; parent_id: number | null;
   kind: 'module' | 'group' | 'task'; title: string; mode: 'seq' | 'free';
-  owner_id: number | null; due: string | null; done: number; sort: number;
+  owner_id: number | null; due: string | null; due_offset: number | null; role_hint: string | null;
+  done: number; sort: number;
 };
 export type Dep = { node_id: number; depends_on: number };

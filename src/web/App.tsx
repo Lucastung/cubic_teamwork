@@ -181,8 +181,13 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
 /* ── 專案管理模組 ── */
 function ProjectsPage({ user, onHome }: { user: User; onHome: () => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   const [open, setOpen] = useState<Project | null>(null);
-  const reload = () => api.get<Project[]>('/api/projects').then(setProjects);
+  const canWrite = user.role === 'admin' || user.role === 'pm';
+  const reload = () => {
+    api.get<Project[]>('/api/projects').then(setProjects);
+    if (canWrite) api.get<any[]>('/api/templates').then(setTemplates).catch(() => {});
+  };
   useEffect(() => { reload(); }, []);
 
   if (open) return <ProjectView project={open} me={user} onBack={() => { setOpen(null); reload(); }} />;
@@ -212,6 +217,27 @@ function ProjectsPage({ user, onHome }: { user: User; onHome: () => void }) {
             <b>{p.name}</b><span className="muted">開啟 →</span>
           </button>
         ))}
+      {canWrite && (
+        <>
+          <div className="side-label" style={{ margin: '26px 4px 10px', display: 'flex', justifyContent: 'space-between' }}>
+            <span>專案模版（服務項目可掛模版，訂單開專案時自動套用）</span>
+            <button className="btn" onClick={async () => {
+              const name = prompt('模版名稱？（例如：全基因體定序交付流程）');
+              if (!name?.trim()) return;
+              const r = await api.post<{ id: number }>('/api/templates', { name });
+              reload();
+              setOpen({ id: r.id, name: name.trim(), status: 'active', kind: 'template', my_role: null });
+            }}>＋ 新模版</button>
+          </div>
+          {templates.map(t => (
+            <button key={t.id} className="card proj-card" onClick={() => setOpen({ ...t, kind: 'template' })}>
+              <span><b>{t.name}</b><span className="muted" style={{ marginLeft: 8 }}>{t.task_count} 項任務</span></span>
+              <span className="muted">編輯模版 →</span>
+            </button>
+          ))}
+          {!templates.length && <p className="muted">還沒有模版——建一個，把你們服務的標準交付流程存起來。</p>}
+        </>
+      )}
     </div>
   );
 }
