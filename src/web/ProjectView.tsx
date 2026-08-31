@@ -283,6 +283,11 @@ function TaskRow({ model, t, idx, mode, isTemplate, posCls, patch, onChanged }: 
             </span>
             <input className="owner-select" defaultValue={t.role_hint ?? ''} placeholder="角色（如：實驗員）"
               onBlur={e => patch(t.id, { role_hint: e.target.value || null })} aria-label="角色佔位" />
+            <select className="owner-select" value={t.owner_id ?? ''} title="開案時自動指派給這位成員"
+              onChange={e => patch(t.id, { owner_id: e.target.value ? Number(e.target.value) : null })} aria-label="預設成員">
+              <option value="">預設成員（開案再指派）</option>
+              {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
           </>
         ) : (
           <>

@@ -77,9 +77,10 @@ async function applyTemplate(db: D1Database, templateId: number, projectId: numb
     for (const n of frontier) {
       const r = await db.prepare(
         `INSERT INTO nodes (project_id, parent_id, kind, title, mode, owner_id, due, role_hint, sort)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(projectId, n.parent_id == null ? null : idMap.get(n.parent_id) ?? null,
-        n.kind, n.title, n.mode, n.kind === 'task' ? dueFromOffset(n.due_offset) : null, n.role_hint, n.sort).run();
+        n.kind, n.title, n.mode, n.owner_id ?? null,
+        n.kind === 'task' ? dueFromOffset(n.due_offset) : null, n.role_hint, n.sort).run();
       idMap.set(n.id, r.meta.last_row_id as number);
     }
     const doneIds = new Set(idMap.keys());
