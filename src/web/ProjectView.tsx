@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, Node, Dep, User, Project } from './api';
 import { Model, NodeState, STATE_LABEL, fdate, todayStr } from './model';
+import { DocEditor, EntityDocs } from './DocsPage';
 
 const SLOTS: [number, number][] = [[18, 24], [82, 22], [16, 74], [83, 76], [50, 12], [50, 90]];
 
@@ -22,7 +23,7 @@ const Avatar = ({ u, size = 20 }: { u?: User; size?: number }) => (
 
 export function ProjectView({ project, me, onBack }: { project: Project; me: User; onBack: () => void }) {
   const [model, setModel] = useState<Model | null>(null);
-  const [view, setView] = useState<'map' | 'tree' | 'river'>('map');
+  const [view, setView] = useState<'map' | 'tree' | 'river' | 'docs'>('map');
   const [curModule, setCurModule] = useState<number | null>(null);
 
   const reload = async () => {
@@ -52,11 +53,13 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
           <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>心智圖</button>
           <button className={view === 'tree' ? 'on' : ''} onClick={() => setView('tree')}>任務樹</button>
           <button className={view === 'river' ? 'on' : ''} onClick={() => setView('river')}>成員河流</button>
+          <button className={view === 'docs' ? 'on' : ''} onClick={() => setView('docs')}>文件</button>
         </nav>
       </header>
       {view === 'map' && <MindMap model={model} project={project} onOpen={openModule} onChanged={reload} />}
       {view === 'tree' && <TreeView model={model} project={project} moduleId={curModule} onPickModule={setCurModule} onBackToMap={() => setView('map')} onChanged={reload} />}
       {view === 'river' && <RiverView model={model} />}
+      {view === 'docs' && <ProjectDocs project={project} me={me} />}
     </div>
   );
 }
@@ -353,6 +356,27 @@ function RiverView({ model }: { model: Model }) {
           </div>
         );
       })}
+    </section>
+  );
+}
+
+/* ═══════════ 專案文件 ═══════════ */
+function ProjectDocs({ project, me }: { project: Project; me: User }) {
+  const [openDoc, setOpenDoc] = useState<number | null>(null);
+  const [folders, setFolders] = useState<any[]>([]);
+  useEffect(() => { api.get<any>('/api/docs/tree').then(t => setFolders(t.folders)); }, []);
+  return (
+    <section>
+      <p className="hint">掛在這個專案上的文件：會議記錄、規格書、合約…新建的文件也會出現在文件中心。</p>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <EntityDocs entityType="project" entityId={project.id} me={me} onOpenDoc={setOpenDoc} />
+      </div>
+      {openDoc != null && (
+        <div className="card">
+          <DocEditor key={openDoc} docId={openDoc} me={me} folders={folders}
+            onMetaChanged={() => {}} onDeleted={() => setOpenDoc(null)} />
+        </div>
+      )}
     </section>
   );
 }

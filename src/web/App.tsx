@@ -1,6 +1,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
+import { DocsPage } from './DocsPage';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -75,7 +76,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members';
+type Page = 'home' | 'projects' | 'members' | 'docs';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -83,6 +84,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   if (page === 'projects') return <ProjectsPage user={user} onHome={() => setPage('home')} />;
   if (page === 'members') return <MembersPage onHome={() => setPage('home')} />;
+  if (page === 'docs') return <DocsPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -134,6 +136,18 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tarrow">→</span>
           </button>
         )}
+
+        <button className="tile" onClick={() => onOpen('docs')}>
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6 3.5h8L19 8v12.5H6z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M14 3.5V8h5M9 12h7M9 15.5h7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>文件中心</b>
+            <span className="tdesc">線上編輯、全文搜尋、版本歷史與權限管理</span>
+            <span className="tmeta">支援 PM 與 ERP 的文件庫</span>
+          </span>
+          <span className="tarrow">→</span>
+        </button>
 
         <div className="tile disabled" aria-disabled="true">
           <span className="ticon" aria-hidden="true">

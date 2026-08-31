@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { docsApp } from './docs';
 
 export interface Env {
   DB: D1Database;
+  FILES: R2Bucket;
   ASSETS: Fetcher;
 }
 
@@ -257,6 +259,9 @@ app.get('/api/river/:userId?', async c => {
   ).bind(uid).all();
   return c.json(results);
 });
+
+/* ── 文件中心 ── */
+app.route('/api', docsApp as any);
 
 /* ── SPA fallback ── */
 app.notFound(c =>
