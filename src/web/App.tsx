@@ -22,9 +22,10 @@ export function App() {
   if (loading) return null;
   if (needsSetup) return <Setup onDone={() => setNeedsSetup(false)} />;
   if (!user) return <Login onLogin={setUser} />;
-  return <Home user={user} onLogout={() => setUser(null)} />;
+  return <Shell user={user} onLogout={() => setUser(null)} />;
 }
 
+/* ── 登入 / 初始化 ── */
 function Setup({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState('');
   const submit = async (e: FormEvent<HTMLFormElement>) => {
@@ -73,10 +74,97 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
-function Home({ user, onLogout }: { user: User; onLogout: () => void }) {
+/* ── 主框架：首頁 → 各功能模組 ── */
+type Page = 'home' | 'projects' | 'members';
+
+function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [page, setPage] = useState<Page>('home');
+  const logout = async () => { await api.post('/api/auth/logout'); onLogout(); };
+
+  if (page === 'projects') return <ProjectsPage user={user} onHome={() => setPage('home')} />;
+  if (page === 'members') return <MembersPage onHome={() => setPage('home')} />;
+  return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
+}
+
+/* ── 首頁：功能模組 ── */
+function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) => void; onLogout: () => void }) {
+  const [projCount, setProjCount] = useState<number | null>(null);
+  const [userCount, setUserCount] = useState<number | null>(null);
+  useEffect(() => {
+    api.get<Project[]>('/api/projects').then(p => setProjCount(p.length)).catch(() => {});
+    api.get<User[]>('/api/users').then(u => setUserCount(u.length)).catch(() => {});
+  }, []);
+
+  return (
+    <div className="app">
+      <header className="home-head">
+        <div>
+          <div className="eyebrow">Cubic Teamwork</div>
+          <h1>您好，{user.name}</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span className="muted">{ROLE_LABEL[user.role]}</span>
+          <button className="btn" onClick={onLogout}>登出</button>
+        </div>
+      </header>
+
+      <div className="tile-grid">
+        <button className="tile" onClick={() => onOpen('projects')}>
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="5.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="18.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M10.8 8.2 6.8 14.8M13.2 8.2l4 6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>專案管理</b>
+            <span className="tdesc">心智圖拆解模塊、任務樹排順序與條件、成員河流</span>
+            <span className="tmeta">{projCount == null ? '…' : `${projCount} 個專案`}</span>
+          </span>
+          <span className="tarrow">→</span>
+        </button>
+
+        {user.role === 'admin' && (
+          <button className="tile" onClick={() => onOpen('members')}>
+            <span className="ticon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M3.2 19c.9-3 3.2-4.5 5.8-4.5s4.9 1.5 5.8 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="17" cy="9.5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M16.2 14.6c2.3.1 4 1.4 4.7 3.9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+            </span>
+            <span className="tbody">
+              <b>人員管理</b>
+              <span className="tdesc">成員帳號、角色與權限</span>
+              <span className="tmeta">{userCount == null ? '…' : `${userCount} 位成員`}</span>
+            </span>
+            <span className="tarrow">→</span>
+          </button>
+        )}
+
+        <div className="tile disabled" aria-disabled="true">
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>進銷存</b>
+            <span className="tdesc">商品、庫存、採購與銷售單</span>
+            <span className="badge-soon">規劃中</span>
+          </span>
+        </div>
+
+        <div className="tile disabled" aria-disabled="true">
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8 14.5l2.5-3 2.5 2 3-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>財務報銷</b>
+            <span className="tdesc">報價、請款與費用報銷</span>
+            <span className="badge-soon">規劃中</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 專案管理模組 ── */
+function ProjectsPage({ user, onHome }: { user: User; onHome: () => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [open, setOpen] = useState<Project | null>(null);
-  const [showUsers, setShowUsers] = useState(false);
   const reload = () => api.get<Project[]>('/api/projects').then(setProjects);
   useEffect(() => { reload(); }, []);
 
@@ -86,23 +174,20 @@ function Home({ user, onLogout }: { user: User; onLogout: () => void }) {
     const name = prompt('專案名稱？');
     if (!name?.trim()) return;
     const r = await api.post<{ id: number }>('/api/projects', { name });
-    await reload();
     const p = (await api.get<Project[]>('/api/projects')).find(x => x.id === r.id);
+    await reload();
     if (p) setOpen(p);
   };
 
   return (
     <div className="app">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <div><div className="eyebrow">Cubic Teamwork</div><h1>專案</h1></div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="muted">{user.name}（{ROLE_LABEL[user.role]}）</span>
-          {user.role === 'admin' && <button className="btn" onClick={() => setShowUsers(s => !s)}>成員管理</button>}
-          {(user.role === 'admin' || user.role === 'pm') && <button className="btn primary" onClick={createProject}>＋ 新專案</button>}
-          <button className="btn" onClick={async () => { await api.post('/api/auth/logout'); onLogout(); }}>登出</button>
+      <header className="home-head">
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button className="btn" onClick={onHome}>← 首頁</button>
+          <div><div className="eyebrow">功能模組</div><h1>專案管理</h1></div>
         </div>
+        {(user.role === 'admin' || user.role === 'pm') && <button className="btn primary" onClick={createProject}>＋ 新專案</button>}
       </header>
-      {showUsers && <UsersPanel />}
       {projects.length === 0
         ? <p className="muted">還沒有專案。{user.role !== 'member' && '按「＋ 新專案」開始。'}</p>
         : projects.map(p => (
@@ -114,9 +199,10 @@ function Home({ user, onLogout }: { user: User; onLogout: () => void }) {
   );
 }
 
+/* ── 人員管理模組 ── */
 const COLORS = ['#C25E82', '#3E7CB8', '#4E9468', '#A5762F', '#7A5EA8', '#3B8B8F'];
 
-function UsersPanel() {
+function MembersPage({ onHome }: { onHome: () => void }) {
   const [users, setUsers] = useState<User[]>([]);
   const [err, setErr] = useState('');
   const reload = () => api.get<User[]>('/api/users').then(setUsers);
@@ -136,27 +222,48 @@ function UsersPanel() {
     } catch (ex: any) { setErr(ex.message); }
   };
 
+  const changeRole = async (u: User, role: string) => {
+    await api.patch(`/api/users/${u.id}`, { role });
+    await reload();
+  };
+
   return (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <div className="eyebrow" style={{ marginBottom: 10 }}>團隊成員</div>
-      {users.map(u => (
-        <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-          <span className="av" style={{ background: u.color, width: 22, height: 22, fontSize: 11 }}>{u.name[0]}</span>
-          <b>{u.name}</b><span className="muted">{u.email}・{ROLE_LABEL[u.role]}</span>
+    <div className="app">
+      <header className="home-head">
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button className="btn" onClick={onHome}>← 首頁</button>
+          <div><div className="eyebrow">功能模組</div><h1>人員管理</h1></div>
         </div>
-      ))}
-      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <input name="name" placeholder="姓名" required style={{ width: 110 }} />
-        <input name="email" type="email" placeholder="Email" required style={{ width: 200 }} />
-        <input name="password" type="password" placeholder="初始密碼（8 碼以上）" minLength={8} required style={{ width: 180 }} />
-        <select name="role" defaultValue="member" style={{ width: 130 }}>
-          <option value="member">成員</option>
-          <option value="pm">專案負責人</option>
-          <option value="admin">管理員</option>
-        </select>
-        <button className="btn primary" type="submit">新增成員</button>
-      </form>
-      {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+      </header>
+      <div className="card">
+        {users.map(u => (
+          <div key={u.id} className="member-row">
+            <span className="av" style={{ background: u.color, width: 26, height: 26, fontSize: 12 }}>{u.name[0]}</span>
+            <b>{u.name}</b>
+            <span className="muted">{u.email}</span>
+            <select value={u.role} onChange={e => changeRole(u, e.target.value)} style={{ width: 130, marginLeft: 'auto' }} aria-label={`${u.name} 的角色`}>
+              <option value="member">成員</option>
+              <option value="pm">專案負責人</option>
+              <option value="admin">管理員</option>
+            </select>
+          </div>
+        ))}
+        <form onSubmit={add} className="member-add">
+          <input name="name" placeholder="姓名" required style={{ width: 110 }} />
+          <input name="email" type="email" placeholder="Email" required style={{ width: 200 }} />
+          <input name="password" type="password" placeholder="初始密碼（8 碼以上）" minLength={8} required style={{ width: 180 }} />
+          <select name="role" defaultValue="member" style={{ width: 130 }}>
+            <option value="member">成員</option>
+            <option value="pm">專案負責人</option>
+            <option value="admin">管理員</option>
+          </select>
+          <button className="btn primary" type="submit">新增成員</button>
+        </form>
+        {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+        <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+          角色權限：管理員可管理成員與所有專案；專案負責人可建立專案；成員參與被加入的專案。
+        </p>
+      </div>
     </div>
   );
 }

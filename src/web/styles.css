@@ -166,3 +166,37 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .flow-arrow{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin:2px 2px 12px}
 .flow-arrow .ln{flex:1;height:0;border-top:1.5px solid var(--line)}
 @media (prefers-reduced-motion: reduce){.bar>i,.ring circle.fg{transition:none}}
+
+/* ═══ 首頁模組 ═══ */
+.home-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
+.tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.tile{
+  display:flex;align-items:flex-start;gap:14px;text-align:left;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:18px;cursor:pointer;font-size:14.5px;color:var(--ink);
+}
+.tile:hover{border-color:var(--accent)}
+.tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tile.disabled{cursor:default;opacity:.62}
+.tile.disabled:hover{border-color:var(--line)}
+.ticon{
+  width:44px;height:44px;border-radius:10px;flex:none;
+  background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+}
+.tile.disabled .ticon{background:var(--surface-2);color:var(--muted)}
+.ticon svg{width:24px;height:24px}
+.tbody{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.tbody b{font-size:15.5px}
+.tdesc{font-size:12.5px;color:var(--muted);line-height:1.5}
+.tmeta{font-size:12px;color:var(--accent);font-weight:500;margin-top:2px}
+.badge-soon{
+  font-size:11px;font-weight:500;color:var(--muted);
+  border:1px solid var(--line);border-radius:99px;padding:1px 9px;
+  align-self:flex-start;margin-top:3px;
+}
+.tarrow{color:var(--muted);font-size:16px;align-self:center}
+.tile:hover .tarrow{color:var(--accent)}
+.member-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.member-row:last-of-type{border-bottom:none}
+.member-add{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
