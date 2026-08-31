@@ -160,6 +160,26 @@ app.post('/api/projects', requireRole(['admin', 'pm']), async c => {
   return c.json({ id: pid });
 });
 
+/* ── 進度管理：跨專案任務匯總 ── */
+app.get('/api/progress', async c => {
+  const u = c.get('user');
+  const projStmt = (u.role === 'admin' || u.role === 'pm')
+    ? c.env.DB.prepare(`SELECT id, name FROM projects WHERE kind = 'normal' AND status = 'active' ORDER BY id DESC`)
+    : c.env.DB.prepare(
+        `SELECT p.id, p.name FROM projects p JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
+         WHERE p.kind = 'normal' AND p.status = 'active' ORDER BY p.id DESC`).bind(u.id);
+  const projects = (await projStmt.all()).results as any[];
+  if (!projects.length) return c.json({ projects: [], nodes: [], deps: [] });
+  const ids = projects.map(p => p.id);
+  const ph = ids.map(() => '?').join(',');
+  const nodes = (await c.env.DB.prepare(
+    `SELECT * FROM nodes WHERE project_id IN (${ph}) ORDER BY parent_id, sort, id`).bind(...ids).all()).results;
+  const deps = (await c.env.DB.prepare(
+    `SELECT d.node_id, d.depends_on FROM deps d JOIN nodes n ON n.id = d.node_id WHERE n.project_id IN (${ph})`
+  ).bind(...ids).all()).results;
+  return c.json({ projects, nodes, deps });
+});
+
 async function canAccessProject(c: any, projectId: number): Promise<boolean> {
   const u: User = c.get('user');
   if (u.role === 'admin') return true;

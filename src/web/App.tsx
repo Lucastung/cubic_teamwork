@@ -3,6 +3,7 @@ import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
+import { ProgressPage } from './ProgressPage';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -77,7 +78,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales';
+type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -87,6 +88,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   if (page === 'members') return <MembersPage onHome={() => setPage('home')} />;
   if (page === 'docs') return <DocsPage me={user} onHome={() => setPage('home')} />;
   if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'progress') return <ProgressPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -138,6 +140,18 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tarrow">→</span>
           </button>
         )}
+
+        <button className="tile" onClick={() => onOpen('progress')}>
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 5.5h9M4 10h13M4 14.5h7M4 19h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><path d="M16 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>進度管理</b>
+            <span className="tdesc">跨專案的成員河流與甘特圖，可勾選要顯示的專案</span>
+            <span className="tmeta">全公司進度一眼看完</span>
+          </span>
+          <span className="tarrow">→</span>
+        </button>
 
         <button className="tile" onClick={() => onOpen('docs')}>
           <span className="ticon" aria-hidden="true">

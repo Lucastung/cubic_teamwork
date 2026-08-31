@@ -278,3 +278,32 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 /* ═══ 模版 ═══ */
 .offset-wrap{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .offset-input{width:52px;text-align:right;padding:3px 6px;font-size:12px}
+
+/* ═══ 進度管理 ═══ */
+.filter-bar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:14px;padding:12px 16px}
+.pcheck{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;cursor:pointer;padding:3px 8px;border-radius:7px}
+.pcheck:hover{background:var(--surface-2)}
+.pcheck input{width:auto;margin:0}
+.gantt-wrap{padding:14px 16px}
+.gantt-scroll{overflow-x:auto}
+.g-axis{display:flex;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:2px}
+.g-tick{flex:none;text-align:center;font-size:10.5px;color:var(--muted);position:relative}
+.g-tick em{position:absolute;top:-14px;left:2px;font-style:normal;font-size:10px;font-weight:700;color:var(--ink);white-space:nowrap}
+.g-axis{padding-top:14px}
+.g-today{position:absolute;top:34px;bottom:0;width:0;border-left:2px solid var(--danger);opacity:.55;z-index:2;pointer-events:none}
+.g-proj{font-weight:700;font-size:13.5px;padding:10px 0 4px;border-bottom:1px solid var(--line)}
+.g-row{display:flex;align-items:center;height:32px;border-bottom:1px solid var(--surface-2)}
+.g-label{flex:none;display:flex;align-items:center;font-size:12.5px;padding-right:10px;min-width:0}
+.g-label .av{border:none;margin:0}
+.g-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-track{position:relative;height:100%;flex:none}
+.g-bar{
+  position:absolute;top:6px;height:20px;border-radius:6px;
+  background:var(--locked-soft);border:1.5px solid var(--line);
+  display:flex;align-items:center;justify-content:flex-end;padding:0 6px;
+  font-size:10px;color:var(--muted);overflow:hidden;white-space:nowrap;
+}
+.g-bar.ready{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.g-bar.done{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.g-bar.locked{background:var(--locked-soft);border-color:var(--line);border-style:dashed}
+.g-bar.over{border-color:var(--danger);color:var(--danger)}
