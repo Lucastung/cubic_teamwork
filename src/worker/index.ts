@@ -139,11 +139,12 @@ app.get('/api/projects', async c => {
   const u = c.get('user');
   const sql = u.role === 'admin'
     ? `SELECT p.*, NULL AS my_role FROM projects p WHERE p.kind = 'normal' ORDER BY p.id DESC`
-    : `SELECT p.*, m.role AS my_role FROM projects p
-       JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
-       WHERE p.kind = 'normal'
+    : `SELECT DISTINCT p.*, m.role AS my_role FROM projects p
+       LEFT JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
+       WHERE p.kind = 'normal' AND (m.user_id IS NOT NULL
+         OR EXISTS (SELECT 1 FROM nodes n WHERE n.project_id = p.id AND n.owner_id = ?))
        ORDER BY p.id DESC`;
-  const stmt = u.role === 'admin' ? c.env.DB.prepare(sql) : c.env.DB.prepare(sql).bind(u.id);
+  const stmt = u.role === 'admin' ? c.env.DB.prepare(sql) : c.env.DB.prepare(sql).bind(u.id, u.id);
   const { results } = await stmt.all();
   return c.json(results);
 });
@@ -166,8 +167,11 @@ app.get('/api/progress', async c => {
   const projStmt = (u.role === 'admin' || u.role === 'pm')
     ? c.env.DB.prepare(`SELECT id, name FROM projects WHERE kind = 'normal' AND status = 'active' ORDER BY id DESC`)
     : c.env.DB.prepare(
-        `SELECT p.id, p.name FROM projects p JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
-         WHERE p.kind = 'normal' AND p.status = 'active' ORDER BY p.id DESC`).bind(u.id);
+        `SELECT DISTINCT p.id, p.name FROM projects p
+         LEFT JOIN project_members m ON m.project_id = p.id AND m.user_id = ?
+         WHERE p.kind = 'normal' AND p.status = 'active' AND (m.user_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM nodes n WHERE n.project_id = p.id AND n.owner_id = ?))
+         ORDER BY p.id DESC`).bind(u.id, u.id);
   const projects = (await projStmt.all()).results as any[];
   if (!projects.length) return c.json({ projects: [], nodes: [], deps: [] });
   const ids = projects.map(p => p.id);
@@ -183,9 +187,18 @@ app.get('/api/progress', async c => {
 async function canAccessProject(c: any, projectId: number): Promise<boolean> {
   const u: User = c.get('user');
   if (u.role === 'admin') return true;
-  const m = await c.env.DB.prepare('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?')
-    .bind(projectId, u.id).first();
+  const m = await c.env.DB.prepare(
+    `SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?
+     UNION SELECT 1 FROM nodes WHERE project_id = ? AND owner_id = ? LIMIT 1`
+  ).bind(projectId, u.id, projectId, u.id).first();
   return !!m;
+}
+
+/** 指派任務給某人時，自動讓他成為專案成員（才看得到專案與自己的河流） */
+async function ensureMembership(db: D1Database, projectId: number, userId: number | null | undefined) {
+  if (!userId) return;
+  await db.prepare(`INSERT OR IGNORE INTO project_members (project_id, user_id, role) VALUES (?, ?, 'member')`)
+    .bind(projectId, userId).run();
 }
 
 app.put('/api/projects/:id/members', async c => {
@@ -223,6 +236,7 @@ app.post('/api/nodes', async c => {
     `INSERT INTO nodes (project_id, parent_id, kind, title, mode, owner_id, due, due_offset, role_hint, sort)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(project_id, parent_id, kind, title.trim(), mode, owner_id, due, due_offset, role_hint, s?.next ?? 0).run();
+  await ensureMembership(c.env.DB, project_id, owner_id);
   return c.json({ id: r.meta.last_row_id });
 });
 
@@ -241,6 +255,7 @@ app.patch('/api/nodes/:id', async c => {
   if (!sets.length) return c.json({ ok: true });
   vals.push(id);
   await c.env.DB.prepare(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  if ('owner_id' in body) await ensureMembership(c.env.DB, node.project_id, body.owner_id);
   return c.json({ ok: true });
 });
 

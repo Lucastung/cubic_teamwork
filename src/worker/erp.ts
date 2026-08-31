@@ -89,6 +89,11 @@ async function applyTemplate(db: D1Database, templateId: number, projectId: numb
   const depRows = deps.filter(d => idMap.has(d.node_id) && idMap.has(d.depends_on));
   if (depRows.length) await db.batch(depRows.map(d =>
     db.prepare('INSERT INTO deps (node_id, depends_on) VALUES (?, ?)').bind(idMap.get(d.node_id), idMap.get(d.depends_on))));
+  // 模版預設成員 → 自動成為新專案成員
+  await db.prepare(
+    `INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+     SELECT DISTINCT project_id, owner_id, 'member' FROM nodes WHERE project_id = ? AND owner_id IS NOT NULL`
+  ).bind(projectId).run();
   return nodes.filter(n => n.kind === 'task').length;
 }
 
