@@ -2,6 +2,7 @@ import { useEffect, useState, FormEvent } from 'react';
 import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
+import { SalesPage } from './SalesPage';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -76,7 +77,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members' | 'docs';
+type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -85,6 +86,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   if (page === 'projects') return <ProjectsPage user={user} onHome={() => setPage('home')} />;
   if (page === 'members') return <MembersPage onHome={() => setPage('home')} />;
   if (page === 'docs') return <DocsPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -149,16 +151,17 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <div className="tile disabled" aria-disabled="true">
+        <button className="tile" onClick={() => onOpen('sales')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
           </span>
           <span className="tbody">
-            <b>進銷存</b>
-            <span className="tdesc">商品、庫存、採購與銷售單</span>
-            <span className="badge-soon">規劃中</span>
+            <b>業務管理</b>
+            <span className="tdesc">客戶、服務項目、報價單與訂單，成交直接開專案</span>
+            <span className="tmeta">ERP 第一階段</span>
           </span>
-        </div>
+          <span className="tarrow">→</span>
+        </button>
 
         <div className="tile disabled" aria-disabled="true">
           <span className="ticon" aria-hidden="true">

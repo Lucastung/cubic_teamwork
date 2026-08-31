@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { docsApp } from './docs';
+import { erpApp } from './erp';
 
 export interface Env {
   DB: D1Database;
@@ -262,6 +263,9 @@ app.get('/api/river/:userId?', async c => {
 
 /* ── 文件中心 ── */
 app.route('/api', docsApp as any);
+
+/* ── ERP：客戶 / 服務項目 / 報價 / 訂單 ── */
+app.route('/api', erpApp as any);
 
 /* ── SPA fallback ── */
 app.notFound(c =>
