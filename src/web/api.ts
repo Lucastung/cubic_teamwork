@@ -24,5 +24,8 @@ export type Node = {
   kind: 'module' | 'group' | 'task'; title: string; mode: 'seq' | 'free';
   owner_id: number | null; due: string | null; due_offset: number | null; role_hint: string | null;
   description: string | null; done: number; sort: number;
+  stage: 'todo' | 'doing' | 'done' | 'signed' | 'closed';
+  needs_sign: number; done_by: number | null; done_at: string | null;
+  signed_by: number | null; signed_at: string | null;
 };
 export type Dep = { node_id: number; depends_on: number };

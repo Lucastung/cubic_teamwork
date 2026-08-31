@@ -164,7 +164,7 @@ function Branch({ model, container, isTemplate, selId, onSelect, patch, onChange
         const posCls = children.length === 1 ? 'only' : i === 0 ? 'first' : i === children.length - 1 ? 'last' : '';
         return n.kind === 'task'
           ? <TaskRow key={n.id} model={model} t={n} idx={i} mode={container.mode} isTemplate={isTemplate} posCls={posCls}
-              selected={selId === n.id} onSelect={() => onSelect(n.id)} patch={patch} />
+              selected={selId === n.id} onSelect={() => onSelect(n.id)} onChanged={onChanged} />
           : <GroupBlock key={n.id} model={model} g={n} posCls={posCls} isTemplate={isTemplate} isLast={i === children.length - 1}
               selId={selId} onSelect={onSelect} patch={patch} onChanged={onChanged} />;
       })}
@@ -211,29 +211,36 @@ function GroupBlock({ model, g, posCls, isTemplate, isLast, selId, onSelect, pat
   );
 }
 
-function TaskRow({ model, t, idx, mode, isTemplate, posCls, selected, onSelect, patch }: {
+function TaskRow({ model, t, idx, mode, isTemplate, posCls, selected, onSelect, onChanged }: {
   model: Model; t: Node; idx: number; mode: 'seq' | 'free'; isTemplate: boolean; posCls: string;
-  selected: boolean; onSelect: () => void; patch: (id: number, b: object) => Promise<void>;
+  selected: boolean; onSelect: () => void; onChanged: () => void;
 }) {
   const s = model.stateOf(t);
-  const over = !isTemplate && !t.done && !!t.due && t.due < todayStr();
+  const over = !isTemplate && !['done', 'signed', 'closed'].includes(s) && !!t.due && t.due < todayStr();
   const unmet = model.unmetChain(t);
+  const circleAct = async () => {
+    const action = s === 'done' ? 'undo' : 'finish';
+    await api.post(`/api/nodes/${t.id}/stage`, { action });
+    await onChanged();
+  };
+  const circleDisabled = s === 'locked' || s === 'signed' || s === 'closed';
   return (
     <div className={`row ${isTemplate ? '' : s} ${posCls} ${selected ? 'sel' : ''}`}
       onClick={e => { if ((e.target as HTMLElement).closest('button,input,select')) return; onSelect(); }}>
       {isTemplate
         ? <span className="node" style={{ fontSize: mode === 'seq' ? 12 : 8, cursor: 'default' }}>{mode === 'seq' ? idx + 1 : '●'}</span>
-        : <button className="node" disabled={s === 'locked'} style={{ fontSize: mode === 'seq' ? 12 : 8 }}
+        : <button className="node" disabled={circleDisabled} style={{ fontSize: mode === 'seq' ? 12 : 8 }}
             aria-label={s === 'done' ? '標記未完成' : '標記完成'}
-            onClick={() => patch(t.id, { done: !t.done })}>
-            {s === 'done' ? '✓' : s === 'locked' ? '🔒' : mode === 'seq' ? idx + 1 : '●'}
+            onClick={circleAct}>
+            {['done', 'signed', 'closed'].includes(s) ? '✓' : s === 'locked' ? '🔒' : mode === 'seq' ? idx + 1 : '●'}
           </button>}
       <div>
         <div className="ttl">
           <span className="name">{t.title}</span>
+          {!!t.needs_sign && !['signed', 'closed'].includes(s) && <span className="chip">需簽核</span>}
           {t.role_hint && !t.owner_id && <span className="chip">角色：{t.role_hint}</span>}
         </div>
-        {!isTemplate && unmet.length > 0 && s !== 'done' && (
+        {!isTemplate && unmet.length > 0 && s === 'locked' && (
           <div className="chips">
             {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組' : ''}</span>)}
           </div>
@@ -247,7 +254,7 @@ function TaskRow({ model, t, idx, mode, isTemplate, posCls, selected, onSelect, 
             {over && <span className="due over">逾期</span>}
             <span className="due mono">{t.due ? fdate(t.due) : ''}</span>
             {t.owner_id && <Avatar u={model.user(t.owner_id)} size={20} />}
-            <span className="state-lab">{STATE_LABEL[s]}</span>
+            <span className="state-lab">{model.stateLabel(t)}</span>
           </>
         )}
       </div>
@@ -314,12 +321,14 @@ function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDe
 
       {isTask ? (
         <div className="panel-fields">
-          {!isTemplate && s && (
-            <div className="pf"><span>狀態</span>
-              <span className={`stchip ${s === 'done' ? 'st-green' : s === 'ready' ? 'st-blue' : 'st-grey'}`}>{STATE_LABEL[s]}</span>
-              {s !== 'locked' && <button className="btn subtle" onClick={() => patch(n.id, { done: !n.done })}>{n.done ? '標記未完成' : '標記完成'}</button>}
-            </div>
-          )}
+          {!isTemplate && <Lifecycle model={model} t={n} me={me} onChanged={onChanged} />}
+          <div className="pf"><span>需簽核</span>
+            <label className="pcheck" style={{ padding: 0 }}>
+              <input type="checkbox" checked={!!n.needs_sign} disabled={['signed', 'closed'].includes(n.stage)}
+                onChange={e => patch(n.id, { needs_sign: e.target.checked ? 1 : 0 })} />
+              完成後需第二人簽核{!isTemplate && n.needs_sign ? '（簽核後才放行後續任務）' : ''}
+            </label>
+          </div>
           {isTemplate ? (
             <>
               <div className="pf"><span>時程</span>
@@ -390,6 +399,90 @@ function DepsEditor({ model, n, onChanged }: { model: Model; n: Node; onChanged:
         <option value="">＋ 加前置…</option>
         {candidates.map(cnd => <option key={cnd.id} value={cnd.id}>{cnd.title}{cnd.kind !== 'task' ? '（整組）' : ''}</option>)}
       </select>
+    </div>
+  );
+}
+
+/* ═══ 任務生命週期操作（右欄）═══ */
+function Lifecycle({ model, t, me, onChanged }: { model: Model; t: Node; me: User; onChanged: () => void }) {
+  const [sigs, setSigs] = useState<any[]>([]);
+  const [box, setBox] = useState<'none' | 'sign' | 'reject'>('none');
+  const [err, setErr] = useState('');
+  const s = model.stateOf(t);
+  const canReview = (me.role === 'admin' || me.role === 'pm') && t.done_by !== me.id;
+  useEffect(() => { api.get<any[]>(`/api/nodes/${t.id}/signatures`).then(setSigs).catch(() => {}); }, [t.id, t.stage]);
+
+  const act = async (action: string, extra?: object) => {
+    setErr('');
+    try { await api.post(`/api/nodes/${t.id}/stage`, { action, ...extra }); setBox('none'); await onChanged(); }
+    catch (ex: any) { setErr(ex.message); }
+  };
+  const doneBy = model.user(t.done_by);
+  const signedBy = model.user(t.signed_by);
+
+  return (
+    <>
+      <div className="pf"><span>狀態</span>
+        <span className={`stchip ${['done', 'signed'].includes(s) ? 'st-green' : s === 'closed' ? 'st-grey' : s === 'doing' ? 'st-amber' : s === 'ready' ? 'st-blue' : 'st-grey'}`}>{model.stateLabel(t)}</span>
+        {s === 'ready' && <><button className="btn" onClick={() => act('start')}>開始執行</button>
+          <button className="btn primary" onClick={() => act('finish')}>標記完成</button></>}
+        {s === 'doing' && <button className="btn primary" onClick={() => act('finish')}>標記完成</button>}
+        {s === 'done' && !t.needs_sign && <>
+          <button className="btn subtle" onClick={() => act('undo')}>標記未完成</button>
+          {(me.role === 'admin' || me.role === 'pm') && <button className="btn" onClick={() => { if (confirm('結案後記錄鎖定、不可再修改，確定？')) act('close'); }}>結案</button>}</>}
+        {s === 'done' && !!t.needs_sign && (canReview
+          ? <><button className="btn primary" onClick={() => setBox(box === 'sign' ? 'none' : 'sign')}>簽核…</button>
+              <button className="btn" onClick={() => setBox(box === 'reject' ? 'none' : 'reject')}>退回…</button></>
+          : <span className="muted" style={{ fontSize: 12 }}>{t.done_by === me.id ? '等待第二人簽核（不能簽自己完成的任務）' : '等待簽核'}</span>)}
+        {s === 'signed' && (me.role === 'admin' || me.role === 'pm') &&
+          <button className="btn" onClick={() => { if (confirm('結案後記錄鎖定、不可再修改，確定？')) act('close'); }}>結案</button>}
+      </div>
+      {doneBy && <div className="pf"><span>完成者</span><span style={{ fontSize: 13 }}>{doneBy.name}{t.done_at ? `・${t.done_at.slice(5, 16)}` : ''}</span></div>}
+      {signedBy && <div className="pf"><span>簽核者</span><span style={{ fontSize: 13 }}>{signedBy.name}{t.signed_at ? `・${t.signed_at.slice(5, 16)}` : ''}</span></div>}
+      {box !== 'none' && (
+        <SignBox mode={box} onSubmit={(password, note) =>
+          act(box, box === 'sign' ? { password, note } : { note })} onCancel={() => setBox('none')} />
+      )}
+      {err && <div className="err">{err}</div>}
+      {sigs.length > 0 && (
+        <div className="pf pf-top"><span>簽核記錄</span>
+          <div style={{ flex: 1 }}>
+            {sigs.map((g, i) => (
+              <div key={i} className="sig-row">
+                <b>{{ sign: '簽核', reject: '退回', close: '結案' }[g.action as string] ?? g.action}</b>
+                <span>{g.signer}・{g.created_at.slice(5, 16)}</span>
+                {g.note && <span className="muted">「{g.note}」</span>}
+                <span className="mono sig-hash" title={`內容雜湊 ${g.content_hash}\n鏈雜湊 ${g.chain_hash}`}>#{g.chain_hash.slice(0, 8)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SignBox({ mode, onSubmit, onCancel }: {
+  mode: 'sign' | 'reject'; onSubmit: (password: string, note: string) => void; onCancel: () => void;
+}) {
+  const [pw, setPw] = useState('');
+  const [note, setNote] = useState('');
+  return (
+    <div className="sign-box">
+      {mode === 'sign' ? (
+        <>
+          <p className="muted" style={{ margin: '0 0 6px', fontSize: 12.5 }}>簽核代表你以第二人身分核實此任務的完成內容，簽核後任務鎖定。請輸入你的密碼確認本人操作：</p>
+          <input type="password" placeholder="你的登入密碼" value={pw} onChange={e => setPw(e.target.value)} autoFocus />
+          <input placeholder="簽核意見（選填）" value={note} onChange={e => setNote(e.target.value)} />
+        </>
+      ) : (
+        <input placeholder="退回原因（必填）" value={note} onChange={e => setNote(e.target.value)} autoFocus />
+      )}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button className="btn" onClick={onCancel}>取消</button>
+        <button className="btn primary" disabled={mode === 'sign' ? !pw : !note.trim()}
+          onClick={() => onSubmit(pw, note)}>{mode === 'sign' ? '確認簽核' : '確認退回'}</button>
+      </div>
     </div>
   );
 }

@@ -111,12 +111,16 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
   const pname = new Map((prog?.projects ?? []).map(p => [p.id, p.name]));
   const today = todayStr();
   const myTasks = model
-    ? model.allTasks().filter(t => t.owner_id === user.id && !t.done)
+    ? model.allTasks().filter(t => t.owner_id === user.id && model.pendingForOwner(t))
         .sort((a, b) => ((a.due ?? '9999') < (b.due ?? '9999') ? -1 : 1))
     : [];
   const readyN = model ? myTasks.filter(t => model.stateOf(t) === 'ready').length : 0;
   const overN = myTasks.filter(t => t.due && t.due < today).length;
   const shown = myTasks.slice(0, 8);
+  const toSign = model && (user.role === 'admin' || user.role === 'pm')
+    ? model.allTasks().filter(t => t.stage === 'done' && t.needs_sign && t.done_by !== user.id)
+        .sort((a, b) => ((a.due ?? '9999') < (b.due ?? '9999') ? -1 : 1))
+    : [];
 
   return (
     <div className="app">
@@ -135,9 +139,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         <div className="banner-main">
           <div className="banner-date mono">{new Date().toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' })}</div>
           <div className="banner-line">
-            {myTasks.length === 0
+            {myTasks.length === 0 && toSign.length === 0
               ? '今天河流裡沒有待辦任務，輕鬆的一天。'
-              : <>你的河流裡有 <b>{myTasks.length}</b> 項待完成{readyN > 0 && <>，其中 <b>{readyN}</b> 項現在可以開始</>}{overN > 0 && <>，<b className="banner-over">{overN} 項已逾期</b></>}。</>}
+              : <>你的河流裡有 <b>{myTasks.length}</b> 項待完成{readyN > 0 && <>，其中 <b>{readyN}</b> 項現在可以開始</>}{overN > 0 && <>，<b className="banner-over">{overN} 項已逾期</b></>}{toSign.length > 0 && <>，<b>{toSign.length}</b> 項等你簽核</>}。</>}
           </div>
         </div>
       </div>
@@ -167,8 +171,23 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         </div>
       )}
 
+      {toSign.length > 0 && (
+        <div className="mytasks card" style={{ borderColor: 'var(--warn)' }}>
+          <div className="side-label" style={{ margin: '0 0 6px' }}>待我簽核（第二人核實）</div>
+          {toSign.map(t => (
+            <button key={t.id} className="mytask-row" onClick={() => setOpenTask(t.id)}>
+              <span className="tdot done" aria-hidden="true" />
+              <span className="mytask-title">{t.title}</span>
+              <span className="muted mytask-proj">{pname.get(t.project_id) ?? ''}</span>
+              <span className="muted" style={{ fontSize: 12 }}>完成者：{users.find(u => u.id === t.done_by)?.name ?? '—'}</span>
+              <span className="state-lab" style={{ width: 'auto' }}>待簽核</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {openTask != null && model?.byId(openTask) && (
-        <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname}
+        <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname} me={user}
           onClose={() => setOpenTask(null)} onChanged={load} />
       )}
 

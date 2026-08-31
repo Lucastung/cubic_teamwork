@@ -391,3 +391,28 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .panel-desc:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
 .stream .tcard{text-align:left;font-family:inherit;color:var(--ink);cursor:pointer}
 .stream .tcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ═══ 生命週期與簽核 ═══ */
+.row.doing>.node{background:var(--warn);border-color:var(--warn);color:#fff}
+.row.signed>.node{background:var(--ok);border-color:var(--ok);color:#fff;box-shadow:0 0 0 2px var(--ok-soft)}
+.row.closed>.node{background:var(--locked);border-color:var(--locked);color:#fff}
+.row.closed .ttl .name{color:var(--muted)}
+.row.doing .state-lab{color:var(--warn)}
+.row.signed .state-lab,.row.closed .state-lab{color:var(--ok)}
+.tcard.doing{border-color:var(--warn)}
+.tcard.doing .meta .st{color:var(--warn)}
+.tcard.signed{border-color:var(--ok);opacity:.75}
+.tcard.signed .meta .st{color:var(--ok)}
+.tcard.closed{opacity:.45}
+.tdot.doing{background:var(--warn)}
+.tdot.signed,.tdot.closed{background:var(--ok)}
+.g-bar.doing{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.g-bar.signed{background:var(--ok);border-color:var(--ok);color:#fff}
+.g-bar.closed{background:var(--locked-soft);border-color:var(--locked);opacity:.6}
+.sign-box{
+  display:flex;flex-direction:column;gap:8px;margin:8px 0;
+  border:1px solid var(--warn);border-radius:8px;padding:12px 14px;background:var(--warn-soft);
+}
+.sign-box input{background:var(--surface)}
+.sig-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;flex-wrap:wrap}
+.sig-hash{font-size:10.5px;color:var(--muted);margin-left:auto;cursor:help}

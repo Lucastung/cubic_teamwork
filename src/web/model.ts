@@ -1,6 +1,13 @@
 import type { Node, Dep, User } from './api';
 
-export type NodeState = 'done' | 'ready' | 'locked';
+export type NodeState = 'locked' | 'ready' | 'doing' | 'done' | 'signed' | 'closed';
+/** 任務已執行完（進度統計用） */
+const executed = (t: Node) => ['done', 'signed', 'closed'].includes(t.stage ?? (t.done ? 'done' : 'todo'));
+/** 任務對「前置條件」而言算完成：需簽核者要簽核後才放行 */
+const releasable = (t: Node) => {
+  const st = t.stage ?? (t.done ? 'done' : 'todo');
+  return t.needs_sign ? ['signed', 'closed'].includes(st) : ['done', 'signed', 'closed'].includes(st);
+};
 
 export class Model {
   nodes: Node[];
@@ -35,13 +42,13 @@ export class Model {
   allTasks() { return this.nodes.filter(n => n.kind === 'task'); }
 
   doneOf(n: Node): boolean {
-    if (n.kind === 'task') return !!n.done;
+    if (n.kind === 'task') return releasable(n);
     const L = this.leavesUnder(n);
-    return L.length > 0 && L.every(l => l.done);
+    return L.length > 0 && L.every(l => releasable(l));
   }
   progress(n: Node): { done: number; total: number } {
     const L = this.leavesUnder(n);
-    return { done: L.filter(l => l.done).length, total: L.length };
+    return { done: L.filter(executed).length, total: L.length };
   }
 
   /** 明確設定的前置 + 依序容器的「上一項」隱含前置 */
@@ -67,8 +74,19 @@ export class Model {
   }
 
   stateOf(t: Node): NodeState {
-    if (t.done) return 'done';
+    const st = t.stage ?? (t.done ? 'done' : 'todo');
+    if (st === 'closed' || st === 'signed' || st === 'done' || st === 'doing') return st as NodeState;
     return this.availOf(t) ? 'ready' : 'locked';
+  }
+  /** 顯示標籤：需簽核的已完成任務顯示「待簽核」 */
+  stateLabel(t: Node): string {
+    const s = this.stateOf(t);
+    if (s === 'done' && t.needs_sign) return '待簽核';
+    return STATE_LABEL[s];
+  }
+  /** 任務對執行者而言還沒了結 */
+  pendingForOwner(t: Node): boolean {
+    return ['locked', 'ready', 'doing'].includes(this.stateOf(t));
   }
 
   /** 未達成的條件（含上層容器的），供鎖定標籤顯示 */
@@ -90,6 +108,8 @@ export class Model {
   }
 }
 
-export const STATE_LABEL: Record<NodeState, string> = { done: '已完成', ready: '可開始', locked: '鎖定中' };
+export const STATE_LABEL: Record<NodeState, string> = {
+  locked: '鎖定中', ready: '可開始', doing: '執行中', done: '已完成', signed: '已簽核', closed: '已結案',
+};
 export const fdate = (d: string) => d.slice(5).replace('-', '/');
 export const todayStr = () => new Date().toISOString().slice(0, 10);

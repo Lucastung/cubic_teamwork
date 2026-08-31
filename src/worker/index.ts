@@ -231,14 +231,12 @@ app.patch('/api/nodes/:id', async c => {
   const node = await c.env.DB.prepare('SELECT * FROM nodes WHERE id = ?').bind(id).first<any>();
   if (!node) return c.json({ error: '找不到節點' }, 404);
   if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
+  if (node.stage === 'signed' || node.stage === 'closed')
+    return c.json({ error: '已簽核／結案的任務內容已鎖定，不可修改' }, 403);
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['title', 'mode', 'owner_id', 'due', 'due_offset', 'role_hint', 'description', 'sort', 'parent_id'] as const) {
+  for (const k of ['title', 'mode', 'owner_id', 'due', 'due_offset', 'role_hint', 'description', 'needs_sign', 'sort', 'parent_id'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k]); }
-  }
-  if ('done' in body) {
-    sets.push('done = ?', `done_at = ${body.done ? "datetime('now')" : 'NULL'}`);
-    vals.push(body.done ? 1 : 0);
   }
   if (!sets.length) return c.json({ ok: true });
   vals.push(id);
@@ -246,11 +244,106 @@ app.patch('/api/nodes/:id', async c => {
   return c.json({ ok: true });
 });
 
+/* ── 生命週期與簽核 ── */
+const sha256hex = async (s: string) => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+};
+async function addSignature(db: D1Database, entityType: string, entityId: number, action: string, signerId: number, note: string | null, content: object) {
+  const content_hash = await sha256hex(JSON.stringify(content));
+  const prev = await db.prepare('SELECT chain_hash FROM signatures ORDER BY id DESC LIMIT 1').first<{ chain_hash: string }>();
+  const prev_hash = prev?.chain_hash ?? 'GENESIS';
+  const now = new Date().toISOString();
+  const chain_hash = await sha256hex(prev_hash + content_hash + action + signerId + now);
+  await db.prepare(
+    'INSERT INTO signatures (entity_type, entity_id, action, signer_id, note, content_hash, prev_hash, chain_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(entityType, entityId, action, signerId, note, content_hash, prev_hash, chain_hash).run();
+}
+
+app.post('/api/nodes/:id/stage', async c => {
+  const id = Number(c.req.param('id'));
+  const u = c.get('user');
+  const node = await c.env.DB.prepare('SELECT * FROM nodes WHERE id = ?').bind(id).first<any>();
+  if (!node) return c.json({ error: '找不到節點' }, 404);
+  if (node.kind !== 'task') return c.json({ error: '只有任務有生命週期' }, 400);
+  if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
+  const { action, password, note } = await c.req.json();
+  const db = c.env.DB;
+  const set = (sql: string, ...vals: any[]) => db.prepare(`UPDATE nodes SET ${sql} WHERE id = ?`).bind(...vals, id).run();
+
+  switch (action) {
+    case 'start':
+      if (node.stage !== 'todo') return c.json({ error: '只有「已建立」的任務可以開始執行' }, 400);
+      await set(`stage = 'doing'`);
+      return c.json({ ok: true });
+    case 'finish':
+      if (!['todo', 'doing'].includes(node.stage)) return c.json({ error: '這個任務不在可完成的狀態' }, 400);
+      await set(`stage = 'done', done = 1, done_by = ?, done_at = datetime('now')`, u.id);
+      return c.json({ ok: true });
+    case 'undo':
+      if (node.stage === 'done')
+        await set(`stage = 'doing', done = 0, done_by = NULL, done_at = NULL`);
+      else if (node.stage === 'doing')
+        await set(`stage = 'todo'`);
+      else return c.json({ error: '已簽核／結案的任務不能復原' }, 400);
+      return c.json({ ok: true });
+    case 'sign': {
+      if (node.stage !== 'done') return c.json({ error: '只有「已完成」的任務可以簽核' }, 400);
+      if (!node.needs_sign) return c.json({ error: '這個任務未設定需簽核' }, 400);
+      if (u.role !== 'admin' && u.role !== 'pm') return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+      if (node.done_by === u.id) return c.json({ error: '不能簽核自己執行完成的任務（第二人核實原則）' }, 403);
+      const me = await db.prepare('SELECT * FROM users WHERE id = ?').bind(u.id).first<any>();
+      if (!password || !(await verifyPassword(String(password), me.password_hash)))
+        return c.json({ error: '密碼錯誤，簽核需驗證本人' }, 401);
+      await addSignature(db, 'node', id, 'sign', u.id, note ?? null, {
+        entity: 'node', id, title: node.title, description: node.description,
+        project_id: node.project_id, done_by: node.done_by, done_at: node.done_at, due: node.due,
+      });
+      await set(`stage = 'signed', signed_by = ?, signed_at = datetime('now')`, u.id);
+      return c.json({ ok: true });
+    }
+    case 'reject': {
+      if (node.stage !== 'done') return c.json({ error: '只有「已完成」的任務可以退回' }, 400);
+      if (u.role !== 'admin' && u.role !== 'pm') return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+      if (node.done_by === u.id) return c.json({ error: '不能審核自己執行的任務' }, 403);
+      if (!note?.trim()) return c.json({ error: '退回請填寫原因' }, 400);
+      await addSignature(db, 'node', id, 'reject', u.id, note.trim(), {
+        entity: 'node', id, title: node.title, done_by: node.done_by, done_at: node.done_at,
+      });
+      await set(`stage = 'doing', done = 0, done_by = NULL, done_at = NULL`);
+      return c.json({ ok: true });
+    }
+    case 'close': {
+      const closable = node.stage === 'signed' || (node.stage === 'done' && !node.needs_sign);
+      if (!closable) return c.json({ error: '需簽核的任務要先簽核才能結案' }, 400);
+      if (u.role !== 'admin' && u.role !== 'pm') return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+      await addSignature(db, 'node', id, 'close', u.id, note ?? null, {
+        entity: 'node', id, title: node.title, signed_by: node.signed_by, signed_at: node.signed_at,
+      });
+      await set(`stage = 'closed', closed_at = datetime('now')`);
+      return c.json({ ok: true });
+    }
+  }
+  return c.json({ error: '未知的動作' }, 400);
+});
+
+app.get('/api/nodes/:id/signatures', async c => {
+  const id = Number(c.req.param('id'));
+  const { results } = await c.env.DB.prepare(
+    `SELECT s.action, s.note, s.content_hash, s.chain_hash, s.created_at, u.name AS signer
+     FROM signatures s JOIN users u ON u.id = s.signer_id
+     WHERE s.entity_type = 'node' AND s.entity_id = ? ORDER BY s.id`
+  ).bind(id).all();
+  return c.json(results);
+});
+
 app.delete('/api/nodes/:id', async c => {
   const id = Number(c.req.param('id'));
   const node = await c.env.DB.prepare('SELECT * FROM nodes WHERE id = ?').bind(id).first<any>();
   if (!node) return c.json({ error: '找不到節點' }, 404);
   if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
+  if (node.stage === 'signed' || node.stage === 'closed')
+    return c.json({ error: '已簽核／結案的任務不可刪除' }, 403);
   await c.env.DB.prepare('DELETE FROM nodes WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
