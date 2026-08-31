@@ -1,9 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, Node, Dep, User, Project } from './api';
-import { Model, NodeState, STATE_LABEL, fdate, todayStr } from './model';
+import { Model, STATE_LABEL, fdate, todayStr } from './model';
 import { DocEditor, EntityDocs } from './DocsPage';
-
-const SLOTS: [number, number][] = [[18, 24], [82, 22], [16, 74], [83, 76], [50, 12], [50, 90]];
 
 function Ring({ pct, size }: { pct: number; size: number }) {
   const r = (size - 6) / 2, C = 2 * Math.PI * r, on = C * pct;
@@ -21,10 +19,14 @@ const Avatar = ({ u, size = 20 }: { u?: User; size?: number }) => (
   </span>
 );
 
+type Sel = { type: 'project' } | { type: 'node'; id: number };
+
 export function ProjectView({ project, me, onBack }: { project: Project; me: User; onBack: () => void }) {
   const [model, setModel] = useState<Model | null>(null);
-  const [view, setView] = useState<'map' | 'tree' | 'river' | 'docs'>('map');
-  const [curModule, setCurModule] = useState<number | null>(null);
+  const [sel, setSel] = useState<Sel>({ type: 'project' });
+  const [openDoc, setOpenDoc] = useState<number | null>(null);
+  const [folders, setFolders] = useState<any[]>([]);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
   const reload = async () => {
     const [tree, users] = await Promise.all([
@@ -33,163 +35,127 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
     ]);
     setModel(new Model(tree.nodes, tree.deps, users));
   };
-  useEffect(() => { reload(); }, [project.id]);
+  useEffect(() => { reload(); api.get<any>('/api/docs/tree').then(t => setFolders(t.folders)).catch(() => {}); }, [project.id]);
 
   if (!model) return <div className="app"><p className="muted">載入中…</p></div>;
 
   const isTemplate = project.kind === 'template';
-  const openModule = (id: number) => { setCurModule(id); setView('tree'); };
+  const selNode = sel.type === 'node' ? model.byId(sel.id) : undefined;
+  if (sel.type === 'node' && !selNode) { setSel({ type: 'project' }); return null; }
+  const all = model.allTasks();
+  const doneAll = all.filter(t => t.done).length;
+
+  const patch = async (id: number, body: object) => { await api.patch(`/api/nodes/${id}`, body); await reload(); };
+  const pick = (s: Sel) => { setSel(s); setOpenDoc(null); };
 
   return (
-    <div className="app">
+    <div className="app docs-app">
       <header className="pv-head">
-        <div>
-          <button className="btn" onClick={onBack}>← 專案列表</button>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div className="eyebrow">{isTemplate ? '專案模版（時程用 D+N 天、負責人用角色佔位）' : '專案'}</div>
+        <button className="btn" onClick={onBack}>← 專案列表</button>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div className="eyebrow">{isTemplate ? '專案模版（D+N 天、角色佔位、預設成員）' : '專案'}</div>
           <h1>{project.name}</h1>
         </div>
-        <nav className="tabs" aria-label="檢視切換">
-          <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>心智圖</button>
-          <button className={view === 'tree' ? 'on' : ''} onClick={() => setView('tree')}>任務樹</button>
-          {!isTemplate && <button className={view === 'river' ? 'on' : ''} onClick={() => setView('river')}>成員河流</button>}
-          {!isTemplate && <button className={view === 'docs' ? 'on' : ''} onClick={() => setView('docs')}>文件</button>}
-        </nav>
+        {!isTemplate && (
+          <div className="mini-progress"><div className="bar" style={{ width: 120 }}><i style={{ width: `${all.length ? doneAll / all.length * 100 : 0}%` }} /></div>
+            <span className="mono">{doneAll}/{all.length}</span></div>
+        )}
       </header>
-      {view === 'map' && <MindMap model={model} project={project} onOpen={openModule} onChanged={reload} />}
-      {view === 'tree' && <TreeView model={model} project={project} isTemplate={isTemplate} moduleId={curModule} onPickModule={setCurModule} onBackToMap={() => setView('map')} onChanged={reload} />}
-      {view === 'river' && <RiverView model={model} />}
-      {view === 'docs' && <ProjectDocs project={project} me={me} />}
+
+      <div className="pv2-layout">
+        {/* ═══ 左：大綱樹 ═══ */}
+        <div className="pv2-tree">
+          <button className={`proj-root ${sel.type === 'project' ? 'sel' : ''}`} onClick={() => pick({ type: 'project' })}>
+            <Ring pct={all.length ? doneAll / all.length : 0} size={26} />
+            <b>{project.name}</b>
+            <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>專案總覽</span>
+          </button>
+          {model.modules().map(mod => (
+            <ModuleSection key={mod.id} model={model} mod={mod} isTemplate={isTemplate}
+              collapsed={collapsed.has(mod.id)}
+              onToggleCollapse={() => {
+                const next = new Set(collapsed);
+                next.has(mod.id) ? next.delete(mod.id) : next.add(mod.id);
+                setCollapsed(next);
+              }}
+              selId={sel.type === 'node' ? sel.id : null}
+              onSelect={id => pick({ type: 'node', id })}
+              patch={patch} onChanged={reload} />
+          ))}
+          <AddRow onAdd={async t => {
+            await api.post('/api/nodes', { project_id: project.id, kind: 'module', title: t, mode: 'free' });
+            await reload();
+          }} placeholder="＋ 新增模塊（Enter 加入）" />
+        </div>
+
+        {/* ═══ 右：詳情＋文件 ═══ */}
+        <aside className="pv2-panel">
+          {openDoc != null ? (
+            <>
+              <button className="btn" style={{ marginBottom: 10 }} onClick={() => setOpenDoc(null)}>← 返回節點</button>
+              <DocEditor key={openDoc} docId={openDoc} me={me} folders={folders}
+                onMetaChanged={() => {}} onDeleted={() => setOpenDoc(null)} />
+            </>
+          ) : sel.type === 'project' ? (
+            <ProjectPanel project={project} model={model} me={me} onOpenDoc={setOpenDoc} />
+          ) : (
+            <NodePanel key={selNode!.id} model={model} n={selNode!} me={me} isTemplate={isTemplate}
+              patch={patch} onChanged={reload} onOpenDoc={setOpenDoc}
+              onDeleted={() => { pick({ type: 'project' }); }} />
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
 
-/* ═══════════ 心智圖 ═══════════ */
-function MindMap({ model, project, onOpen, onChanged }: {
-  model: Model; project: Project; onOpen: (id: number) => void; onChanged: () => void;
+/* ═══ 模塊區塊 ═══ */
+function ModuleSection({ model, mod, isTemplate, collapsed, onToggleCollapse, selId, onSelect, patch, onChanged }: {
+  model: Model; mod: Node; isTemplate: boolean; collapsed: boolean; onToggleCollapse: () => void;
+  selId: number | null; onSelect: (id: number) => void;
+  patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const modules = model.modules();
-  const all = model.allTasks();
-  const doneAll = all.filter(t => t.done).length;
-
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current, svg = svgRef.current;
-    if (!wrap || !svg) return;
-    const draw = () => {
-      const wr = wrap.getBoundingClientRect();
-      svg.setAttribute('viewBox', `0 0 ${wr.width} ${wr.height}`);
-      const c = wrap.querySelector('.center-node');
-      if (!c) return;
-      const cr = c.getBoundingClientRect();
-      const cx = cr.left - wr.left + cr.width / 2, cy = cr.top - wr.top + cr.height / 2;
-      let p = '';
-      wrap.querySelectorAll('.mnode:not(.center-node)').forEach(n => {
-        const r = (n as HTMLElement).getBoundingClientRect();
-        const nx = r.left - wr.left + r.width / 2, ny = r.top - wr.top + r.height / 2;
-        const mx = (cx + nx) / 2;
-        p += `<path d="M ${cx} ${cy} C ${mx} ${cy}, ${mx} ${ny}, ${nx} ${ny}"${(n as HTMLElement).classList.contains('addnode') ? ' stroke-dasharray="4 5"' : ''}/>`;
-      });
-      svg.innerHTML = p;
-    };
-    draw();
-    window.addEventListener('resize', draw);
-    return () => window.removeEventListener('resize', draw);
-  });
-
-  const addModule = async () => {
-    if (!title.trim()) { setAdding(false); return; }
-    const r = await api.post<{ id: number }>('/api/nodes', { project_id: project.id, kind: 'module', title: title.trim(), mode: 'free' });
-    setTitle(''); setAdding(false);
-    await onChanged();
-    onOpen(r.id);
-  };
-
-  return (
-    <section>
-      <p className="hint">把專案拆成工作模塊，點模塊進入任務樹。完成度只統計最終子任務。</p>
-      <div className="map-wrap" ref={wrapRef}>
-        <svg className="wires" ref={svgRef} aria-hidden="true" />
-        <div className="mnode center-node" style={{ left: '50%', top: '48%' }}>
-          <div className="mtitle">{project.name}</div>
-          <div className="msub"><Ring pct={all.length ? doneAll / all.length : 0} size={34} /><span className="cnt">{doneAll}/{all.length} 項完成</span></div>
-        </div>
-        {modules.map((mod, i) => {
-          const { done, total } = model.progress(mod);
-          const owners = [...new Set(model.leavesUnder(mod).map(t => t.owner_id))].map(id => model.user(id!)).filter(Boolean) as User[];
-          const [x, y] = SLOTS[i % SLOTS.length];
-          return (
-            <div key={mod.id} className="mnode" style={{ left: `${x}%`, top: `${y}%` }} tabIndex={0} role="button"
-              onClick={() => onOpen(mod.id)} onKeyDown={e => e.key === 'Enter' && onOpen(mod.id)}>
-              <div className="mtitle"><Ring pct={total ? done / total : 0} size={30} /><span>{mod.title}</span></div>
-              <div className="msub"><span className="cnt">{total} 項任務</span><span className="avs">{owners.map(u => <Avatar key={u.id} u={u} />)}</span></div>
-            </div>
-          );
-        })}
-        {modules.length < SLOTS.length && (
-          <div className="mnode addnode" style={{ left: `${SLOTS[modules.length][0]}%`, top: `${SLOTS[modules.length][1]}%` }}
-            tabIndex={0} onClick={() => setAdding(true)}>
-            {adding
-              ? <input autoFocus placeholder="模塊名稱…" value={title} onChange={e => setTitle(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addModule(); if (e.key === 'Escape') { setAdding(false); setTitle(''); } }}
-                  onBlur={() => { if (!title.trim()) setAdding(false); }} />
-              : '＋ 新增模塊'}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/* ═══════════ 任務樹 ═══════════ */
-function TreeView({ model, project, isTemplate, moduleId, onPickModule, onBackToMap, onChanged }: {
-  model: Model; project: Project; isTemplate: boolean; moduleId: number | null;
-  onPickModule: (id: number) => void; onBackToMap: () => void; onChanged: () => void;
-}) {
-  const modules = model.modules();
-  const mod = (moduleId != null ? model.byId(moduleId) : undefined) ?? modules[0];
-  if (!mod) return <p className="hint">還沒有模塊——回心智圖新增一個。</p>;
   const { done, total } = model.progress(mod);
-
-  const patch = async (id: number, body: object) => { await api.patch(`/api/nodes/${id}`, body); await onChanged(); };
-  const addNode = async (kind: 'group' | 'task', parent: number, title: string) => {
+  const addNode = async (kind: 'group' | 'task', title: string) => {
     await api.post('/api/nodes', {
-      project_id: project.id, parent_id: parent, kind, title,
-      owner_id: kind === 'task' && !isTemplate ? model.users[0]?.id ?? null : null,
+      project_id: mod.project_id, parent_id: mod.id, kind, title,
+      owner_id: null,
       due: kind === 'task' && !isTemplate ? todayStr() : null,
       due_offset: kind === 'task' && isTemplate ? 7 : null,
     });
     await onChanged();
   };
-
   return (
-    <section>
-      <div className="tree-head">
-        <button className="btn" onClick={onBackToMap}>← 心智圖</button>
-        <select className="mod-picker" value={mod.id} onChange={e => onPickModule(Number(e.target.value))} aria-label="切換模塊">
-          {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-        </select>
-        <button className={`mode ${mod.mode === 'seq' ? 'seq' : ''}`} title="切換執行模式"
+    <section className="mod-section">
+      <div className={`mod-row ${selId === mod.id ? 'sel' : ''}`} onClick={e => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        onSelect(mod.id);
+      }}>
+        <button className="chev" onClick={onToggleCollapse} aria-label={collapsed ? '展開' : '收合'}>{collapsed ? '▸' : '▾'}</button>
+        <Ring pct={total ? done / total : 0} size={24} />
+        <b className="mod-name">{mod.title}</b>
+        <span className="muted" style={{ fontSize: 12 }}>{done}/{total}</span>
+        <button className={`mode ${mod.mode === 'seq' ? 'seq' : ''}`} style={{ marginLeft: 'auto' }}
           onClick={() => patch(mod.id, { mode: mod.mode === 'seq' ? 'free' : 'seq' })}>
-          {mod.mode === 'seq' ? '依序執行' : '可並行'}
+          {mod.mode === 'seq' ? '依序' : '並行'}
         </button>
-        <div className="mini-progress"><div className="bar"><i style={{ width: `${total ? done / total * 100 : 0}%` }} /></div><span className="mono">{done}/{total}</span></div>
       </div>
-      <div className="tree">
-        <Branch model={model} container={mod} isTemplate={isTemplate} patch={patch} onChanged={onChanged} />
-        <AddRow onAdd={t => addNode('task', mod.id, t)} placeholder="＋ 新增子任務（Enter 加入）" />
-        <AddRow onAdd={t => addNode('group', mod.id, t)} placeholder="＋ 新增分組（父節點，用來分類與統計）" subtle />
-      </div>
+      {!collapsed && (
+        <>
+          <Branch model={model} container={mod} isTemplate={isTemplate} selId={selId} onSelect={onSelect} patch={patch} onChanged={onChanged} />
+          <div className="add-pair">
+            <AddRow onAdd={t => addNode('task', t)} placeholder="＋ 子任務" subtle />
+            <AddRow onAdd={t => addNode('group', t)} placeholder="＋ 分組" subtle />
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
-function Branch({ model, container, isTemplate, patch, onChanged }: {
-  model: Model; container: Node; isTemplate: boolean; patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
+function Branch({ model, container, isTemplate, selId, onSelect, patch, onChanged }: {
+  model: Model; container: Node; isTemplate: boolean; selId: number | null; onSelect: (id: number) => void;
+  patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
   const children = model.kids(container.id);
   return (
@@ -197,15 +163,18 @@ function Branch({ model, container, isTemplate, patch, onChanged }: {
       {children.map((n, i) => {
         const posCls = children.length === 1 ? 'only' : i === 0 ? 'first' : i === children.length - 1 ? 'last' : '';
         return n.kind === 'task'
-          ? <TaskRow key={n.id} model={model} t={n} idx={i} mode={container.mode} isTemplate={isTemplate} posCls={posCls} patch={patch} onChanged={onChanged} />
-          : <GroupBlock key={n.id} model={model} g={n} posCls={posCls} isTemplate={isTemplate} isLast={i === children.length - 1} patch={patch} onChanged={onChanged} />;
+          ? <TaskRow key={n.id} model={model} t={n} idx={i} mode={container.mode} isTemplate={isTemplate} posCls={posCls}
+              selected={selId === n.id} onSelect={() => onSelect(n.id)} patch={patch} />
+          : <GroupBlock key={n.id} model={model} g={n} posCls={posCls} isTemplate={isTemplate} isLast={i === children.length - 1}
+              selId={selId} onSelect={onSelect} patch={patch} onChanged={onChanged} />;
       })}
     </div>
   );
 }
 
-function GroupBlock({ model, g, posCls, isTemplate, isLast, patch, onChanged }: {
+function GroupBlock({ model, g, posCls, isTemplate, isLast, selId, onSelect, patch, onChanged }: {
   model: Model; g: Node; posCls: string; isTemplate: boolean; isLast: boolean;
+  selId: number | null; onSelect: (id: number) => void;
   patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
 }) {
   const { done, total } = model.progress(g);
@@ -213,7 +182,7 @@ function GroupBlock({ model, g, posCls, isTemplate, isLast, patch, onChanged }: 
   const addTask = async (title: string) => {
     await api.post('/api/nodes', {
       project_id: g.project_id, parent_id: g.id, kind: 'task', title,
-      owner_id: isTemplate ? null : model.users[0]?.id ?? null,
+      owner_id: null,
       due: isTemplate ? null : todayStr(),
       due_offset: isTemplate ? 7 : null,
     });
@@ -221,40 +190,37 @@ function GroupBlock({ model, g, posCls, isTemplate, isLast, patch, onChanged }: 
   };
   return (
     <>
-      <div className={`row grow ${posCls === 'last' ? '' : posCls}`}>
+      <div className={`row grow ${posCls === 'last' ? '' : posCls} ${selId === g.id ? 'sel' : ''}`}
+        onClick={e => { if ((e.target as HTMLElement).closest('button,input,select')) return; onSelect(g.id); }}>
         <span className="gnode"><Ring pct={total ? done / total : 0} size={26} /></span>
         <div>
           <div className="ttl"><span className="name">{g.title}</span><span className="gcount">{done}/{total} 完成</span></div>
           {unmet.length > 0 && <div className="chips">{unmet.map(d => <span key={d.id} className="chip">待「{d.title}」</span>)}</div>}
-          <DepsEditor model={model} n={g} onChanged={onChanged} />
         </div>
         <div className="acts">
           <button className={`mode ${g.mode === 'seq' ? 'seq' : ''}`} onClick={() => patch(g.id, { mode: g.mode === 'seq' ? 'free' : 'seq' })}>
-            {g.mode === 'seq' ? '依序執行' : '可並行'}
+            {g.mode === 'seq' ? '依序' : '並行'}
           </button>
-          <button className="btn subtle" title="刪除分組（底下任務會一併刪除）" onClick={async () => {
-            if (confirm(`刪除分組「${g.title}」？底下 ${total} 項任務會一併刪除。`)) { await api.del(`/api/nodes/${g.id}`); await onChanged(); }
-          }}>✕</button>
         </div>
       </div>
       <div className={`nest ${isLast ? 'tail' : ''}`}>
-        <Branch model={model} container={g} isTemplate={isTemplate} patch={patch} onChanged={onChanged} />
+        <Branch model={model} container={g} isTemplate={isTemplate} selId={selId} onSelect={onSelect} patch={patch} onChanged={onChanged} />
         <AddRow onAdd={addTask} placeholder="＋ 這組新增任務" subtle />
       </div>
     </>
   );
 }
 
-function TaskRow({ model, t, idx, mode, isTemplate, posCls, patch, onChanged }: {
+function TaskRow({ model, t, idx, mode, isTemplate, posCls, selected, onSelect, patch }: {
   model: Model; t: Node; idx: number; mode: 'seq' | 'free'; isTemplate: boolean; posCls: string;
-  patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
+  selected: boolean; onSelect: () => void; patch: (id: number, b: object) => Promise<void>;
 }) {
   const s = model.stateOf(t);
   const over = !isTemplate && !t.done && !!t.due && t.due < todayStr();
   const unmet = model.unmetChain(t);
-  const metExplicit = model.explicitDeps(t).map(d => model.byId(d)!).filter(d => d && model.doneOf(d));
   return (
-    <div className={`row ${isTemplate ? '' : s} ${posCls}`}>
+    <div className={`row ${isTemplate ? '' : s} ${posCls} ${selected ? 'sel' : ''}`}
+      onClick={e => { if ((e.target as HTMLElement).closest('button,input,select')) return; onSelect(); }}>
       {isTemplate
         ? <span className="node" style={{ fontSize: mode === 'seq' ? 12 : 8, cursor: 'default' }}>{mode === 'seq' ? idx + 1 : '●'}</span>
         : <button className="node" disabled={s === 'locked'} style={{ fontSize: mode === 'seq' ? 12 : 8 }}
@@ -263,75 +229,28 @@ function TaskRow({ model, t, idx, mode, isTemplate, posCls, patch, onChanged }: 
             {s === 'done' ? '✓' : s === 'locked' ? '🔒' : mode === 'seq' ? idx + 1 : '●'}
           </button>}
       <div>
-        <div className="ttl"><span className="name">{t.title}</span>
-          {!isTemplate && t.role_hint && !t.owner_id && <span className="chip">角色：{t.role_hint}</span>}
+        <div className="ttl">
+          <span className="name">{t.title}</span>
+          {t.role_hint && !t.owner_id && <span className="chip">角色：{t.role_hint}</span>}
         </div>
-        {!isTemplate && (unmet.length > 0 || metExplicit.length > 0) && s !== 'done' && (
+        {!isTemplate && unmet.length > 0 && s !== 'done' && (
           <div className="chips">
-            {metExplicit.map(d => <span key={d.id} className="chip met">待「{d.title}」</span>)}
-            {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組完成' : ''}{u.inherited ? '（上層條件）' : ''}</span>)}
+            {unmet.map((u, i) => <span key={i} className="chip">待「{u.dep.title}」{u.dep.kind !== 'task' ? '整組' : ''}</span>)}
           </div>
         )}
-        <DepsEditor model={model} n={t} onChanged={onChanged} />
       </div>
       <div className="acts">
         {isTemplate ? (
-          <>
-            <span className="offset-wrap" title="開案後第幾天到期">
-              D+<input type="number" className="offset-input mono" defaultValue={t.due_offset ?? ''} placeholder="—"
-                onBlur={e => patch(t.id, { due_offset: e.target.value === '' ? null : Number(e.target.value) })} aria-label="開案後天數" /> 天
-            </span>
-            <input className="owner-select" defaultValue={t.role_hint ?? ''} placeholder="角色（如：實驗員）"
-              onBlur={e => patch(t.id, { role_hint: e.target.value || null })} aria-label="角色佔位" />
-            <select className="owner-select" value={t.owner_id ?? ''} title="開案時自動指派給這位成員"
-              onChange={e => patch(t.id, { owner_id: e.target.value ? Number(e.target.value) : null })} aria-label="預設成員">
-              <option value="">預設成員（開案再指派）</option>
-              {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </>
+          <span className="offset-wrap">D+{t.due_offset ?? '—'} 天</span>
         ) : (
           <>
-            <input type="date" className="due-input mono" value={t.due ?? ''} onChange={e => patch(t.id, { due: e.target.value || null })} aria-label="deadline" />
             {over && <span className="due over">逾期</span>}
-            <select className="owner-select" value={t.owner_id ?? ''} onChange={e => patch(t.id, { owner_id: e.target.value ? Number(e.target.value) : null })} aria-label="負責人">
-              <option value="">未指派</option>
-              {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            <span className="due mono">{t.due ? fdate(t.due) : ''}</span>
+            {t.owner_id && <Avatar u={model.user(t.owner_id)} size={20} />}
             <span className="state-lab">{STATE_LABEL[s]}</span>
           </>
         )}
-        <button className="btn subtle" title="刪除任務" onClick={async () => {
-          if (confirm(`刪除任務「${t.title}」？`)) { await api.del(`/api/nodes/${t.id}`); await onChanged(); }
-        }}>✕</button>
       </div>
-    </div>
-  );
-}
-
-/** 自訂前置條件編輯：顯示現有條件（可移除），下拉新增 */
-function DepsEditor({ model, n, onChanged }: { model: Model; n: Node; onChanged: () => void }) {
-  const [open, setOpen] = useState(false);
-  const explicit = model.explicitDeps(n);
-  const forbidden = new Set<number>([n.id, ...model.leavesUnder(n).map(x => x.id)]);
-  const candidates = model.nodes.filter(x => x.kind !== 'module' && !forbidden.has(x.id) && !explicit.includes(x.id));
-  const save = async (ids: number[]) => { await api.put(`/api/nodes/${n.id}/deps`, { dependsOn: ids }); await onChanged(); };
-  if (!open) {
-    return <button className="dep-toggle" onClick={() => setOpen(true)}>{explicit.length ? `條件（${explicit.length}）` : '＋ 條件'}</button>;
-  }
-  return (
-    <div className="dep-editor">
-      {explicit.map(id => {
-        const d = model.byId(id); if (!d) return null;
-        return <span key={id} className="chip">{d.title}{d.kind !== 'task' ? '（整組）' : ''}<button onClick={() => save(explicit.filter(x => x !== id))} aria-label="移除條件">✕</button></span>;
-      })}
-      <select value="" onChange={e => e.target.value && save([...explicit, Number(e.target.value)])} aria-label="新增前置條件">
-        <option value="">＋ 選擇前置任務或分組…</option>
-        {candidates.map(cnd => {
-          const modName = (() => { let p = cnd; while (p.parent_id != null) { const q = model.byId(p.parent_id); if (!q) break; p = q; } return p.title; })();
-          return <option key={cnd.id} value={cnd.id}>{modName}／{cnd.title}{cnd.kind !== 'task' ? '（整組）' : ''}</option>;
-        })}
-      </select>
-      <button className="btn subtle" onClick={() => setOpen(false)}>收合</button>
     </div>
   );
 }
@@ -346,63 +265,128 @@ function AddRow({ onAdd, placeholder, subtle }: { onAdd: (t: string) => void; pl
   );
 }
 
-/* ═══════════ 成員河流 ═══════════ */
-function RiverView({ model }: { model: Model }) {
+/* ═══ 右欄：專案總覽 ═══ */
+function ProjectPanel({ project, model, me, onOpenDoc }: {
+  project: Project; model: Model; me: User; onOpenDoc: (id: number) => void;
+}) {
+  const all = model.allTasks();
   const today = todayStr();
-  const members = model.users.filter(u => model.allTasks().some(t => t.owner_id === u.id));
-  if (!members.length) return <p className="hint">還沒有任何已指派的任務。</p>;
+  const overN = all.filter(t => !t.done && t.due && t.due < today).length;
+  const readyN = all.filter(t => model.stateOf(t) === 'ready').length;
   return (
-    <section>
-      <p className="hint">最終子任務依 <b>deadline</b> 排序流入每位成員的河流，逾期未完成標紅。</p>
-      <div className="flow-arrow"><span>deadline 近</span><span className="ln" /><span>deadline 遠</span></div>
-      {members.map(m => {
-        const mine = model.allTasks().filter(t => t.owner_id === m.id)
-          .sort((a, b) => (a.due ?? '9999') < (b.due ?? '9999') ? -1 : 1);
-        const readyN = mine.filter(t => model.stateOf(t) === 'ready').length;
-        const overN = mine.filter(t => !t.done && t.due && t.due < today).length;
-        return (
-          <div key={m.id} className="river-lane">
-            <div className="lane-head"><Avatar u={m} size={26} /><span className="nm">{m.name}</span>
-              <span className="load">{overN ? <b>逾期 {overN} 項・</b> : null}{readyN ? `現在可做 ${readyN} 項` : '沒有可做的任務'}・共 {mine.length} 項</span></div>
-            <div className="stream">
-              {mine.map(t => {
-                const s = model.stateOf(t);
-                const over = !t.done && !!t.due && t.due < today;
-                const g = t.parent_id != null ? model.byId(t.parent_id) : undefined;
-                let root = t; while (root.parent_id != null) { const q = model.byId(root.parent_id); if (!q) break; root = q; }
-                return (
-                  <div key={t.id} className={`tcard ${s} ${over ? 'over' : ''}`}>
-                    <div className="mod">{root.title}{g && g.kind === 'group' ? '・' + g.title : ''}</div>
-                    <div className="tt">{t.title}</div>
-                    <div className="meta"><span className="st">{s === 'locked' ? '等前置' : STATE_LABEL[s]}</span><span className="due mono">{over ? '逾期 ' : ''}{t.due ? fdate(t.due) : '—'}</span></div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </section>
+    <div className="panel-card">
+      <div className="eyebrow">專案總覽</div>
+      <h2 className="panel-title">{project.name}</h2>
+      <div className="panel-stats">
+        <span>共 {all.length} 項任務</span>
+        <span>可開始 {readyN}</span>
+        {overN > 0 && <span className="due over">逾期 {overN}</span>}
+      </div>
+      <div className="sect-label">專案文件</div>
+      <EntityDocs entityType="project" entityId={project.id} me={me} onOpenDoc={onOpenDoc} />
+      <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>點左側任何節點（模塊／分組／任務），這裡會顯示它的詳情與掛載文件。</p>
+    </div>
   );
 }
 
-/* ═══════════ 專案文件 ═══════════ */
-function ProjectDocs({ project, me }: { project: Project; me: User }) {
-  const [openDoc, setOpenDoc] = useState<number | null>(null);
-  const [folders, setFolders] = useState<any[]>([]);
-  useEffect(() => { api.get<any>('/api/docs/tree').then(t => setFolders(t.folders)); }, []);
+/* ═══ 右欄：節點詳情＋文件 ═══ */
+function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDeleted }: {
+  model: Model; n: Node; me: User; isTemplate: boolean;
+  patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
+  onOpenDoc: (id: number) => void; onDeleted: () => void;
+}) {
+  const path: string[] = [];
+  let p = n.parent_id != null ? model.byId(n.parent_id) : undefined;
+  while (p) { path.unshift(p.title); p = p.parent_id != null ? model.byId(p.parent_id) : undefined; }
+  const isTask = n.kind === 'task';
+  const s = isTask ? model.stateOf(n) : null;
+  const { done, total } = model.progress(n);
+  const KIND_LABEL = { module: '模塊', group: '分組', task: '任務' } as const;
+
   return (
-    <section>
-      <p className="hint">掛在這個專案上的文件：會議記錄、規格書、合約…新建的文件也會出現在文件中心。</p>
-      <div className="card" style={{ marginBottom: 14 }}>
-        <EntityDocs entityType="project" entityId={project.id} me={me} onOpenDoc={setOpenDoc} />
-      </div>
-      {openDoc != null && (
-        <div className="card">
-          <DocEditor key={openDoc} docId={openDoc} me={me} folders={folders}
-            onMetaChanged={() => {}} onDeleted={() => setOpenDoc(null)} />
+    <div className="panel-card">
+      <div className="eyebrow">{path.length ? path.join('／') + '／' : ''}{KIND_LABEL[n.kind]}</div>
+      <input className="panel-title-input" defaultValue={n.title} aria-label="名稱"
+        onBlur={e => { if (e.target.value.trim() && e.target.value !== n.title) patch(n.id, { title: e.target.value.trim() }); }} />
+
+      {isTask ? (
+        <div className="panel-fields">
+          {!isTemplate && s && (
+            <div className="pf"><span>狀態</span>
+              <span className={`stchip ${s === 'done' ? 'st-green' : s === 'ready' ? 'st-blue' : 'st-grey'}`}>{STATE_LABEL[s]}</span>
+              {s !== 'locked' && <button className="btn subtle" onClick={() => patch(n.id, { done: !n.done })}>{n.done ? '標記未完成' : '標記完成'}</button>}
+            </div>
+          )}
+          {isTemplate ? (
+            <>
+              <div className="pf"><span>時程</span>
+                <span className="offset-wrap">D+<input type="number" className="offset-input mono" defaultValue={n.due_offset ?? ''}
+                  onBlur={e => patch(n.id, { due_offset: e.target.value === '' ? null : Number(e.target.value) })} aria-label="開案後天數" /> 天</span></div>
+              <div className="pf"><span>角色</span>
+                <input style={{ width: 150 }} defaultValue={n.role_hint ?? ''} placeholder="例如：實驗員"
+                  onBlur={e => patch(n.id, { role_hint: e.target.value || null })} /></div>
+              <div className="pf"><span>預設成員</span>
+                <select value={n.owner_id ?? ''} onChange={e => patch(n.id, { owner_id: e.target.value ? Number(e.target.value) : null })}>
+                  <option value="">（開案再指派）</option>
+                  {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select></div>
+            </>
+          ) : (
+            <>
+              <div className="pf"><span>負責人</span>
+                <select value={n.owner_id ?? ''} onChange={e => patch(n.id, { owner_id: e.target.value ? Number(e.target.value) : null })}>
+                  <option value="">未指派</option>
+                  {model.users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                {n.role_hint && !n.owner_id && <span className="chip">角色：{n.role_hint}</span>}</div>
+              <div className="pf"><span>deadline</span>
+                <input type="date" className="mono" style={{ width: 150 }} value={n.due ?? ''}
+                  onChange={e => patch(n.id, { due: e.target.value || null })} /></div>
+            </>
+          )}
+          <div className="pf pf-top"><span>前置條件</span><div style={{ flex: 1 }}><DepsEditor model={model} n={n} onChanged={onChanged} /></div></div>
+        </div>
+      ) : (
+        <div className="panel-fields">
+          <div className="pf"><span>進度</span><span className="mono">{done}/{total}</span>
+            <div className="bar" style={{ width: 100 }}><i style={{ width: `${total ? done / total * 100 : 0}%` }} /></div></div>
+          <div className="pf"><span>執行模式</span>
+            <button className={`mode ${n.mode === 'seq' ? 'seq' : ''}`} onClick={() => patch(n.id, { mode: n.mode === 'seq' ? 'free' : 'seq' })}>
+              {n.mode === 'seq' ? '依序執行' : '可並行'}</button></div>
+          {n.kind === 'group' && <div className="pf pf-top"><span>前置條件</span><div style={{ flex: 1 }}><DepsEditor model={model} n={n} onChanged={onChanged} /></div></div>}
         </div>
       )}
-    </section>
+
+      <div className="sect-label">掛在這個{KIND_LABEL[n.kind]}上的文件</div>
+      <EntityDocs entityType="node" entityId={n.id} me={me} onOpenDoc={onOpenDoc} />
+
+      <div style={{ marginTop: 18, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+        <button className="btn subtle" onClick={async () => {
+          const warn = isTask ? `刪除任務「${n.title}」？` : `刪除${KIND_LABEL[n.kind]}「${n.title}」？底下 ${total} 項任務會一併刪除。`;
+          if (confirm(warn)) { await api.del(`/api/nodes/${n.id}`); onDeleted(); await onChanged(); }
+        }}>刪除{KIND_LABEL[n.kind]}</button>
+      </div>
+    </div>
+  );
+}
+
+/** 前置條件編輯 */
+function DepsEditor({ model, n, onChanged }: { model: Model; n: Node; onChanged: () => void }) {
+  const explicit = model.explicitDeps(n);
+  const forbidden = new Set<number>([n.id, ...model.leavesUnder(n).map(x => x.id)]);
+  const candidates = model.nodes.filter(x => x.kind !== 'module' && x.project_id === n.project_id && !forbidden.has(x.id) && !explicit.includes(x.id));
+  const save = async (ids: number[]) => { await api.put(`/api/nodes/${n.id}/deps`, { dependsOn: ids }); await onChanged(); };
+  return (
+    <div className="dep-editor" style={{ marginTop: 0 }}>
+      {explicit.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{model.effDeps(n).length ? '（依序模式：自動以上一項為前置）' : '無'}</span>}
+      {explicit.map(id => {
+        const d = model.byId(id); if (!d) return null;
+        return <span key={id} className="chip">{d.title}{d.kind !== 'task' ? '（整組）' : ''}<button onClick={() => save(explicit.filter(x => x !== id))} aria-label="移除條件">✕</button></span>;
+      })}
+      <select value="" onChange={e => e.target.value && save([...explicit, Number(e.target.value)])} aria-label="新增前置條件">
+        <option value="">＋ 加前置…</option>
+        {candidates.map(cnd => <option key={cnd.id} value={cnd.id}>{cnd.title}{cnd.kind !== 'task' ? '（整組）' : ''}</option>)}
+      </select>
+    </div>
   );
 }
