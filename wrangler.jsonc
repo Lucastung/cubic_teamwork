@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "cubic_teamwork",
-      "database_id": "TO_BE_FILLED_AFTER_D1_CREATE",
+      "database_id": "82279d89-5aed-4125-b569-87b6fc80a12c",
       "migrations_dir": "migrations"
     }
   ]
