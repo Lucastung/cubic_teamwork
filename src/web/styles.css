@@ -1,0 +1,55 @@
+:root{
+  --ground:#F4F5F2; --surface:#FFFFFF; --surface-2:#EDEFEA;
+  --ink:#232823; --muted:#68706C; --line:#DDE1DB;
+  --accent:#2456A6; --accent-soft:#E7EDF8;
+  --ok:#2E8757; --ok-soft:#E3F1E9;
+  --warn:#B97817; --warn-soft:#F7EEDC;
+  --danger:#B3403A; --danger-soft:#F6E4E2;
+  --locked:#8A928E; --locked-soft:#EDEFEC;
+  --shadow:0 1px 2px rgba(35,40,35,.06),0 4px 16px rgba(35,40,35,.07);
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#161917; --surface:#1F2321; --surface-2:#282D2A;
+    --ink:#E7EAE6; --muted:#9BA49F; --line:#353B37;
+    --accent:#84ABE8; --accent-soft:#26324A;
+    --ok:#5CBA84; --ok-soft:#22352A;
+    --warn:#D9A04B; --warn-soft:#3A3021;
+    --danger:#E08983; --danger-soft:#3C2624;
+    --locked:#78817C; --locked-soft:#2A2F2C;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:'Noto Sans TC',-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif;
+  font-size:14.5px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono','Noto Sans TC',monospace;font-variant-numeric:tabular-nums}
+.app{max-width:980px;margin:0 auto;padding:24px 20px 70px}
+h1{font-size:22px;font-weight:700;margin:2px 0 0}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:500}
+button{font-family:inherit;cursor:pointer}
+.btn{
+  font-size:13px;font-weight:500;border-radius:7px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);padding:6px 14px;
+}
+.btn:hover{background:var(--surface-2)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input,select{
+  font-family:inherit;font-size:14px;border:1px solid var(--line);border-radius:7px;
+  padding:8px 12px;background:var(--surface);color:var(--ink);width:100%;
+}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:20px;
+}
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{width:360px;display:flex;flex-direction:column;gap:12px}
+.auth-card h1{text-align:center;margin-bottom:6px}
+.err{color:var(--danger);font-size:13px}
+.muted{color:var(--muted);font-size:13px}
