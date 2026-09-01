@@ -323,6 +323,7 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
   const [doc, setDoc] = useState<any>(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [panel, setPanel] = useState<'none' | 'versions' | 'perms'>('none');
+  const [ai, setAi] = useState<null | { instr: string; mode: 'replace' | 'append'; busy: boolean; err: string }>(null);
   const [, forceSel] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const titleTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -493,9 +494,33 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
     input.click();
   };
 
-  const B = ({ label, act, active, title }: { label: string; act: () => void; active?: boolean; title: string }) => (
-    <button className={`tb ${active ? 'on' : ''}`} title={title} onMouseDown={e => { e.preventDefault(); act(); }}>{label}</button>
+  const B = ({ label, act, active, title, disabled }: { label: string; act: () => void; active?: boolean; title: string; disabled?: boolean }) => (
+    <button className={`tb ${active ? 'on' : ''}`} title={title} disabled={disabled}
+      onMouseDown={e => { e.preventDefault(); if (!disabled) act(); }}>{label}</button>
   );
+
+  /* ── AI 完稿 ── */
+  const runAi = async () => {
+    if (!editor || !ai) return;
+    setAi({ ...ai, busy: true, err: '' });
+    try {
+      const r = await api.post<{ html: string }>('/api/ai/complete', {
+        instruction: ai.instr,
+        title: doc.title,
+        doc_no: doc.doc_no,
+        is_template: !!doc.is_template,
+        content: editor.getHTML(),
+      });
+      // 單一交易貼入 → 按一次「復原」即可整份回復
+      if (ai.mode === 'replace')
+        editor.chain().focus().insertContentAt({ from: 0, to: editor.state.doc.content.size }, r.html).run();
+      else
+        editor.chain().focus('end').insertContent(r.html).run();
+      setAi(null);
+    } catch (e: any) {
+      setAi(a => a && { ...a, busy: false, err: e?.message || 'AI 完稿失敗' });
+    }
+  };
 
   return (
     <div className="doc-editor">
@@ -558,6 +583,9 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
 
       {canEdit && (
         <div className="toolbar">
+          <B label="↺" title="復原 (Ctrl+Z)" disabled={!editor.can().undo()} act={() => editor.chain().focus().undo().run()} />
+          <B label="↻" title="重做 (Ctrl+Shift+Z)" disabled={!editor.can().redo()} act={() => editor.chain().focus().redo().run()} />
+          <span className="tsep" />
           <B label="B" title="粗體" active={editor.isActive('bold')} act={() => editor.chain().focus().toggleBold().run()} />
           <B label="I" title="斜體" active={editor.isActive('italic')} act={() => editor.chain().focus().toggleItalic().run()} />
           <B label="S" title="刪除線" active={editor.isActive('strike')} act={() => editor.chain().focus().toggleStrike().run()} />
@@ -574,6 +602,9 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
           <B label="圖" title="插入圖片" act={uploadImage} />
           <B label="&lt;/&gt;" title="程式碼區塊" active={editor.isActive('codeBlock')} act={() => editor.chain().focus().toggleCodeBlock().run()} />
           <B label="❝" title="引用" active={editor.isActive('blockquote')} act={() => editor.chain().focus().toggleBlockquote().run()} />
+          <span className="tsep" />
+          <button className="tb ai-btn" title="AI 完稿：把目前的大綱／草稿交給 AI 完成內容"
+            onMouseDown={e => { e.preventDefault(); setAi({ instr: '', mode: 'replace', busy: false, err: '' }); }}>✨ AI 完稿</button>
           {editor.isActive('image') && (
             <>
               <span className="tsep" />
@@ -589,6 +620,41 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
       )}
 
       <EditorContent editor={editor} className="tiptap-wrap" />
+
+      {ai && (
+        <>
+          <div className="scrim show" onClick={() => !ai.busy && setAi(null)} />
+          <div className="modal-card" role="dialog" aria-label="AI 完稿">
+            <h3 style={{ margin: '0 0 6px' }}>✨ AI 完稿</h3>
+            <p className="muted" style={{ fontSize: 12.5, margin: '0 0 8px' }}>
+              系統會把目前文件內容（大綱／草稿）連同你的指示交給 AI，自動完成正式內容。
+              結果不滿意時，按工具列的 ↺ 復原（或 Ctrl+Z）一步就能整份回復。
+            </p>
+            <textarea className="panel-desc" rows={4} value={ai.instr} disabled={ai.busy}
+              placeholder={'補充指示（可留空）。例如：\n語氣正式，把每個大綱條目擴寫成完整段落\n全文約 800 字，最後加一段結語'}
+              onChange={e => setAi({ ...ai, instr: e.target.value })} />
+            <div style={{ display: 'flex', gap: 16, margin: '4px 0 10px', fontSize: 13 }}>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="radio" name="ai-mode" checked={ai.mode === 'replace'} disabled={ai.busy}
+                  onChange={() => setAi({ ...ai, mode: 'replace' })} />
+                取代全文（大綱 → 完稿）
+              </label>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="radio" name="ai-mode" checked={ai.mode === 'append'} disabled={ai.busy}
+                  onChange={() => setAi({ ...ai, mode: 'append' })} />
+                附加在文末
+              </label>
+            </div>
+            {ai.err && <p className="err" style={{ margin: '0 0 8px' }}>{ai.err}</p>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn" disabled={ai.busy} onClick={() => setAi(null)}>取消</button>
+              <button className="btn primary" disabled={ai.busy} onClick={runAi}>
+                {ai.busy ? 'AI 完稿中…（約 10–30 秒）' : '開始完稿'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {panel === 'versions' && <VersionsPanel docId={docId} onRestored={async () => {
         const d = await api.get<any>(`/api/docs/${docId}`);

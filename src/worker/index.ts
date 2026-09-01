@@ -8,6 +8,8 @@ export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
   ASSETS: Fetcher;
+  AI?: Ai;               // Workers AI（本地 dev 可能沒有）
+  AI_MODEL?: string;     // 可用環境變數換模型
 }
 
 type User = {
@@ -429,6 +431,60 @@ app.get('/api/river/:userId?', async c => {
      ORDER BY n.done, n.due IS NULL, n.due`
   ).bind(uid).all();
   return c.json(results);
+});
+
+/* ── AI 完稿（Workers AI）── */
+const AI_MODEL_DEFAULT = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+
+app.post('/api/ai/complete', async c => {
+  if (!c.env.AI)
+    return c.json({ error: '此環境未啟用 AI（Workers AI 只在部署到 Cloudflare 後可用）' }, 501);
+  const { instruction, title, doc_no, content, is_template } = await c.req.json<{
+    instruction?: string; title?: string; doc_no?: string; content?: string; is_template?: boolean;
+  }>();
+  const draft = (content ?? '').trim();
+  if (!draft && !(instruction ?? '').trim())
+    return c.json({ error: '文件沒有內容也沒有指示，AI 不知道要寫什麼' }, 400);
+
+  const system = [
+    '你是公司內部的文件撰寫助理。使用者會給你一份文件的大綱或草稿（HTML 格式），請把它完成為一份完整、正式的繁體中文商業文件內容。',
+    '寫作要求：保留原有的章節結構與既有內容的意思，把大綱條目擴寫成完整段落；語氣專業、精確，不要口語化；不要憑空捏造具體數字、日期、人名，需要的地方用「（待填）」標示。',
+    '輸出格式（務必遵守）：',
+    '1. 只輸出 HTML 內容片段，不要 <html>/<head>/<body> 外殼。',
+    '2. 只能使用這些標籤：h1 h2 h3 p ul ol li table thead tbody tr th td strong em blockquote br。',
+    '3. 不要用 Markdown、不要用 ``` 圍欄。',
+    '4. 直接輸出文件內容本身，前後不要加任何說明、問候或註解。',
+  ].join('\n');
+  const userMsg = [
+    title ? `文件標題：${title}` : '',
+    doc_no ? `文件編號：${doc_no}` : '',
+    is_template ? '這是一份表單模版，請把它完成為可重複使用的標準表單/範本。' : '',
+    (instruction ?? '').trim() ? `使用者指示：${(instruction ?? '').trim()}` : '',
+    '',
+    '目前的大綱／草稿如下：',
+    draft || '（目前是空白文件，請依標題與指示從零撰寫）',
+  ].filter(s => s !== '').join('\n');
+
+  try {
+    const out: any = await c.env.AI.run((c.env.AI_MODEL || AI_MODEL_DEFAULT) as any, {
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userMsg },
+      ],
+      max_tokens: 4096,
+      temperature: 0.4,
+    } as any);
+    let html = String(out?.response ?? '').trim();
+    // 去掉模型偶爾還是會加的圍欄
+    html = html.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
+    if (!html) return c.json({ error: 'AI 沒有產生內容，請再試一次' }, 502);
+    // 萬一回的是純文字，包成段落
+    if (!/<[a-z][\s\S]*>/i.test(html))
+      html = html.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+    return c.json({ html });
+  } catch (e: any) {
+    return c.json({ error: `AI 呼叫失敗：${e?.message ?? String(e)}` }, 502);
+  }
 });
 
 /* ── 系統備份與還原（僅管理員）── */

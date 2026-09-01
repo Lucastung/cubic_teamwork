@@ -227,6 +227,10 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .tb{border:none;background:transparent;border-radius:6px;min-width:30px;height:28px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;padding:0 8px}
 .tb:hover{background:var(--surface);color:var(--ink)}
 .tb.on{background:var(--accent-soft);color:var(--accent)}
+.tb:disabled{opacity:.35;cursor:default}
+.tb:disabled:hover{background:transparent;color:var(--muted)}
+.tb.ai-btn{color:var(--accent);white-space:nowrap}
+.tb.ai-btn:hover{background:var(--accent-soft)}
 .tsep{width:1px;background:var(--line);margin:4px 4px}
 .tiptap-wrap .tiptap{min-height:320px;outline:none;line-height:1.75;font-size:15px}
 .tiptap h1{font-size:24px;margin:18px 0 8px}
