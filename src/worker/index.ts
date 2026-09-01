@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { docsApp } from './docs';
 import { erpApp } from './erp';
+import { finApp } from './fin';
 import { dumpAll, validateBackup, restoreAll, runScheduledBackup, zipAllFiles, restoreFilesFromZip } from './backup';
 
 export interface Env {
@@ -21,22 +22,8 @@ type Vars = { user: User };
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-/* ── password hashing (PBKDF2, Workers-compatible) ── */
-const ITER = 100_000;
-async function hashPassword(pw: string, saltHex?: string): Promise<string> {
-  const salt = saltHex
-    ? Uint8Array.from(saltHex.match(/.{2}/g)!.map(b => parseInt(b, 16)))
-    : crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' }, key, 256);
-  const hex = (buf: ArrayBuffer | Uint8Array) =>
-    [...new Uint8Array(buf as ArrayBuffer)].map(b => b.toString(16).padStart(2, '0')).join('');
-  return `${hex(salt)}:${hex(bits)}`;
-}
-async function verifyPassword(pw: string, stored: string): Promise<boolean> {
-  const [salt] = stored.split(':');
-  return (await hashPassword(pw, salt)) === stored;
-}
+import { hashPassword, verifyPassword, addSignature } from './shared';
+
 const newToken = () => crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
 
 /* ── auth middleware ── */
@@ -273,21 +260,6 @@ app.patch('/api/nodes/:id', async c => {
 });
 
 /* ── 生命週期與簽核 ── */
-const sha256hex = async (s: string) => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-};
-async function addSignature(db: D1Database, entityType: string, entityId: number, action: string, signerId: number, note: string | null, content: object) {
-  const content_hash = await sha256hex(JSON.stringify(content));
-  const prev = await db.prepare('SELECT chain_hash FROM signatures ORDER BY id DESC LIMIT 1').first<{ chain_hash: string }>();
-  const prev_hash = prev?.chain_hash ?? 'GENESIS';
-  const now = new Date().toISOString();
-  const chain_hash = await sha256hex(prev_hash + content_hash + action + signerId + now);
-  await db.prepare(
-    'INSERT INTO signatures (entity_type, entity_id, action, signer_id, note, content_hash, prev_hash, chain_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(entityType, entityId, action, signerId, note, content_hash, prev_hash, chain_hash).run();
-}
-
 app.post('/api/nodes/:id/stage', async c => {
   const id = Number(c.req.param('id'));
   const u = c.get('user');
@@ -571,6 +543,9 @@ app.route('/api', docsApp as any);
 
 /* ── ERP：客戶 / 服務項目 / 報價 / 訂單 ── */
 app.route('/api', erpApp as any);
+
+/* ── 財務：費用報銷 / 請款收款 ── */
+app.route('/api', finApp as any);
 
 /* ── SPA fallback ── */
 app.notFound(c =>

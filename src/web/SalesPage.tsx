@@ -380,11 +380,34 @@ function OrdersTab({ me, canWrite }: { me: User; canWrite: boolean }) {
   );
 }
 
+const InvS: Record<string, { label: string; cls: string }> = {
+  draft: { label: '草稿', cls: 'st-grey' }, issued: { label: '已送出', cls: 'st-blue' },
+  partial: { label: '部分收款', cls: 'st-amber' }, paid: { label: '已收款', cls: 'st-green' },
+  void: { label: '作廢', cls: 'st-red' },
+};
+
 function OrderDetail({ id, me, canWrite, onBack }: { id: number; me: User; canWrite: boolean; onBack: () => void }) {
   const [o, setO] = useState<any>(null);
-  const reload = () => api.get<any>(`/api/orders/${id}`).then(setO);
+  const [invs, setInvs] = useState<any[]>([]);
+  const reload = () => {
+    api.get<any>(`/api/orders/${id}`).then(setO);
+    api.get<any[]>(`/api/invoices?order_id=${id}`).then(setInvs).catch(() => {});
+  };
   useEffect(() => { reload(); }, [id]);
   if (!o) return <p className="muted">載入中…</p>;
+
+  const live = invs.filter(v => v.status !== 'void');
+  const billed = live.reduce((s, v) => s + v.total, 0);
+  const collected = live.reduce((s, v) => s + v.paid, 0);
+  const makeInvoice = async () => {
+    if (!confirm('依訂單明細建立請款單（草稿）？建立後到「財務管理 → 請款單」調整分期金額並送出。')) return;
+    const r = await api.post<{ inv_no: string }>('/api/invoices', {
+      order_id: id, party_id: o.party_id, title: o.title,
+      lines: o.lines.map((l: any) => ({ item_id: l.item_id, name: l.name, qty: l.qty, unit: l.unit, price: l.price })),
+    });
+    alert(`請款單 ${r.inv_no} 已建立（草稿）`);
+    reload();
+  };
 
   const NEXT: Record<string, { status: string; label: string }> = {
     active: { status: 'delivered', label: '標記已交付' },
@@ -434,6 +457,28 @@ function OrderDetail({ id, me, canWrite, onBack }: { id: number; me: User; canWr
                 if (confirm('為這張訂單建立交付專案？')) { await api.post(`/api/orders/${id}/create-project`); reload(); }
               }}>＋ 建立交付專案（進入 PM 拆任務）</button>
             : <p className="muted" style={{ margin: '4px 0' }}>尚未建立交付專案</p>}
+      </div>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="side-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>請款進度</span>
+          {canWrite && !['void'].includes(o.status) && <button className="btn" onClick={makeInvoice}>＋ 開請款單</button>}
+        </div>
+        {live.length > 0 && (
+          <div className="member-row" style={{ fontSize: 13 }}>
+            <span className="muted">已請款</span><b className="mono">{NT(billed)}</b>
+            <span className="muted">已收款</span><b className="mono">{NT(collected)}</b>
+            <span className="muted">未請款</span><b className="mono">{NT(Math.max(o.total - billed, 0))}</b>
+          </div>
+        )}
+        {invs.map(v => (
+          <div key={v.id} className="member-row">
+            <span className="mono">{v.inv_no}</span><span>{v.title}</span>
+            <Chip s={v.status} map={InvS} />
+            <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>已收 {NT(v.paid)}</span>
+            <span className="mono">{NT(v.total)}</span>
+          </div>
+        ))}
+        {!invs.length && <p className="muted" style={{ margin: '4px 0' }}>還沒有請款單。可分多期請款，到「財務管理」登記收款。</p>}
       </div>
       {o.events?.length > 0 && (
         <div className="card" style={{ marginBottom: 14 }}>

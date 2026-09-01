@@ -7,6 +7,8 @@ const TABLES = [
   'users', 'tpl_classes', 'folders', 'projects', 'project_members',
   'nodes', 'deps', 'parties', 'party_contacts', 'items',
   'quotes', 'quote_lines', 'orders', 'order_lines',
+  'expenses', 'expense_lines', 'expense_receipts',
+  'invoices', 'invoice_lines', 'payments',
   'docs', 'doc_versions', 'doc_perms', 'doc_links', 'files',
   'txn_events', 'signatures', 'comments',
 ];

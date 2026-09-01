@@ -3,6 +3,7 @@ import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
+import { FinPage, ES } from './FinPage';
 import { ProgressPage, TaskDetailModal } from './ProgressPage';
 import { TaskPage } from './TaskPage';
 import { Model, STATE_LABEL, fdate, todayStr } from './model';
@@ -87,7 +88,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress';
+type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'finance';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -98,6 +99,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   if (page === 'docs') return <DocsPage me={user} onHome={() => setPage('home')} />;
   if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} />;
   if (page === 'progress') return <ProgressPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'finance') return <FinPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -108,9 +110,12 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
   const [prog, setProg] = useState<{ projects: { id: number; name: string }[]; nodes: Node[]; deps: Dep[] } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [openTask, setOpenTask] = useState<number | null>(null);
+  const [finTodo, setFinTodo] = useState<{ to_approve: any[]; to_pay: any[] }>({ to_approve: [], to_pay: [] });
   const load = () => {
     api.get<any>('/api/progress').then(d => { setProg(d); setProjCount(d.projects.length); }).catch(() => {});
     api.get<User[]>('/api/users').then(u => { setUsers(u); setUserCount(u.length); }).catch(() => {});
+    if (user.role === 'admin' || user.role === 'pm')
+      api.get<any>('/api/expenses?box=todo').then(setFinTodo).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -193,6 +198,33 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         </div>
       )}
 
+      {(finTodo.to_approve.length > 0 || finTodo.to_pay.length > 0) && (
+        <div className="mytasks card" style={{ borderColor: 'var(--warn)' }}>
+          <div className="side-label" style={{ margin: '0 0 6px', display: 'flex', justifyContent: 'space-between' }}>
+            <span>待我處理的報銷</span>
+            <button className="btn subtle" onClick={() => onOpen('finance')}>財務管理 →</button>
+          </div>
+          {finTodo.to_approve.map(x => (
+            <button key={`a${x.id}`} className="mytask-row" onClick={() => onOpen('finance')}>
+              <span className="tdot done" aria-hidden="true" />
+              <span className="mytask-title">{x.exp_no}　{x.title || '（未命名）'}</span>
+              <span className="muted mytask-proj">申請人：{x.claimant}</span>
+              <span className="mono">NT$ {Number(x.total).toLocaleString('zh-TW')}</span>
+              <span className="state-lab" style={{ width: 'auto' }}>待核准</span>
+            </button>
+          ))}
+          {finTodo.to_pay.map(x => (
+            <button key={`p${x.id}`} className="mytask-row" onClick={() => onOpen('finance')}>
+              <span className="tdot signed" aria-hidden="true" />
+              <span className="mytask-title">{x.exp_no}　{x.title || '（未命名）'}</span>
+              <span className="muted mytask-proj">申請人：{x.claimant}</span>
+              <span className="mono">NT$ {Number(x.total).toLocaleString('zh-TW')}</span>
+              <span className="state-lab" style={{ width: 'auto' }}>{ES.approved.label}・待付款</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {openTask != null && model?.byId(openTask) && (
         <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname} me={user}
           onClose={() => setOpenTask(null)} onChanged={load} />
@@ -261,16 +293,17 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <div className="tile disabled" aria-disabled="true">
+        <button className="tile" onClick={() => onOpen('finance')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8 14.5l2.5-3 2.5 2 3-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
           <span className="tbody">
-            <b>財務報銷</b>
-            <span className="tdesc">報價、請款與費用報銷</span>
-            <span className="badge-soon">規劃中</span>
+            <b>財務管理</b>
+            <span className="tdesc">費用報銷（兩層簽核）、請款收款與應收帳款</span>
+            <span className="tmeta">報銷沿用電子簽章鏈</span>
           </span>
-        </div>
+          <span className="tarrow">→</span>
+        </button>
       </div>
     </div>
   );
