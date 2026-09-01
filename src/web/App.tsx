@@ -3,7 +3,8 @@ import { api, User, Project } from './api';
 import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
-import { FinPage, ES } from './FinPage';
+import { FinPage } from './FinPage';
+import { HomeTodo } from './HomeTodo';
 import { HRPage } from './HRPage';
 import { ProgressPage, TaskDetailModal } from './ProgressPage';
 import { TaskPage } from './TaskPage';
@@ -112,12 +113,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
   const [prog, setProg] = useState<{ projects: { id: number; name: string }[]; nodes: Node[]; deps: Dep[] } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [openTask, setOpenTask] = useState<number | null>(null);
-  const [finTodo, setFinTodo] = useState<{ to_approve: any[]; to_pay: any[] }>({ to_approve: [], to_pay: [] });
   const load = () => {
     api.get<any>('/api/progress').then(d => { setProg(d); setProjCount(d.projects.length); }).catch(() => {});
     api.get<User[]>('/api/users').then(u => { setUsers(u); setUserCount(u.length); }).catch(() => {});
-    if (user.role === 'admin' || user.role === 'pm')
-      api.get<any>('/api/expenses?box=todo').then(setFinTodo).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -191,47 +189,8 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         </div>
       )}
 
-      {toSign.length > 0 && (
-        <div className="mytasks card" style={{ borderColor: 'var(--warn)' }}>
-          <div className="side-label" style={{ margin: '0 0 6px' }}>待我簽核（第二人核實）</div>
-          {toSign.map(t => (
-            <button key={t.id} className="mytask-row" onClick={() => setOpenTask(t.id)}>
-              <span className="tdot done" aria-hidden="true" />
-              <span className="mytask-title">{t.title}</span>
-              <span className="muted mytask-proj">{pname.get(t.project_id) ?? ''}</span>
-              <span className="muted" style={{ fontSize: 12 }}>完成者：{users.find(u => u.id === t.done_by)?.name ?? '—'}</span>
-              <span className="state-lab" style={{ width: 'auto' }}>待簽核</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {(finTodo.to_approve.length > 0 || finTodo.to_pay.length > 0) && (
-        <div className="mytasks card" style={{ borderColor: 'var(--warn)' }}>
-          <div className="side-label" style={{ margin: '0 0 6px', display: 'flex', justifyContent: 'space-between' }}>
-            <span>待我處理的報銷</span>
-            <button className="btn subtle" onClick={() => onOpen('finance')}>財務管理 →</button>
-          </div>
-          {finTodo.to_approve.map(x => (
-            <button key={`a${x.id}`} className="mytask-row" onClick={() => onOpen('finance')}>
-              <span className="tdot done" aria-hidden="true" />
-              <span className="mytask-title">{x.exp_no}　{x.title || '（未命名）'}</span>
-              <span className="muted mytask-proj">申請人：{x.claimant}</span>
-              <span className="mono">NT$ {Number(x.total).toLocaleString('zh-TW')}</span>
-              <span className="state-lab" style={{ width: 'auto' }}>待核准</span>
-            </button>
-          ))}
-          {finTodo.to_pay.map(x => (
-            <button key={`p${x.id}`} className="mytask-row" onClick={() => onOpen('finance')}>
-              <span className="tdot signed" aria-hidden="true" />
-              <span className="mytask-title">{x.exp_no}　{x.title || '（未命名）'}</span>
-              <span className="muted mytask-proj">申請人：{x.claimant}</span>
-              <span className="mono">NT$ {Number(x.total).toLocaleString('zh-TW')}</span>
-              <span className="state-lab" style={{ width: 'auto' }}>{ES.approved.label}・待付款</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <HomeTodo me={user} toSign={toSign} pname={pname} users={users}
+        onOpenTask={setOpenTask} onChanged={load} />
 
       {openTask != null && model?.byId(openTask) && (
         <TaskDetailModal model={model} t={model.byId(openTask)!} pname={pname} me={user}
