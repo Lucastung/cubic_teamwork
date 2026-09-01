@@ -328,7 +328,41 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
   const titleTimer = useRef<ReturnType<typeof setTimeout>>();
   const canEdit = doc && (doc.my_level === 'edit' || doc.my_level === 'manage');
 
+  /** 上傳圖片檔並插入目前游標位置（貼上/拖放共用） */
+  const uploadImageFile = async (view: any, file: File) => {
+    if (file.size > 20 * 1024 * 1024) { alert('圖片上限 20MB'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/files', { method: 'POST', body: fd });
+    const data = await res.json() as { url?: string; error?: string };
+    if (res.ok && data.url) {
+      const node = view.state.schema.nodes.image.create({ src: data.url });
+      view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView());
+    } else alert(data.error || '圖片上傳失敗');
+  };
+
   const editor = useEditor({
+    editorProps: {
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) { event.preventDefault(); uploadImageFile(view, file); return true; }
+          }
+        }
+        return false;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+        if (!files.length) return false;
+        event.preventDefault();
+        files.forEach(f => uploadImageFile(view, f));
+        return true;
+      },
+    },
     extensions: [
       StarterKit,
       ResizableImage.configure({ inline: false }),
