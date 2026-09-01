@@ -37,6 +37,21 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<DocMeta[] | null>(null);
   const [curFolder, setCurFolder] = useState<number | null>(null);
+  const [view, setView] = useState<'docs' | 'index'>('docs');
+  const [expanded, setExpanded] = useState<Set<number> | null>(null);
+
+  // 預設只展開第一層
+  useEffect(() => {
+    if (expanded === null && classes.length) {
+      setExpanded(new Set(classes.filter(x => x.parent_id == null).map(x => x.id)));
+    }
+  }, [classes]);
+  const isOpen = (id: number) => expanded?.has(id) ?? false;
+  const toggleOpen = (id: number) => {
+    const next = new Set(expanded ?? []);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setExpanded(next);
+  };
 
   const reload = () => {
     api.get<Tree>('/api/docs/tree').then(setTree);
@@ -87,10 +102,18 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   const renderClasses = (parent: number | null, depth: number): JSX.Element[] => {
     const out: JSX.Element[] = [];
     for (const cls of classes.filter(x => x.parent_id === parent)) {
+      const tpls = (tree?.docs ?? []).filter(x => x.is_template && x.class_id === cls.id);
+      const hasKids = classes.some(x => x.parent_id === cls.id) || tpls.length > 0;
+      const open = isOpen(cls.id);
       out.push(
-        <div key={`cls${cls.id}`} className="cls-row" style={{ paddingLeft: 8 + depth * 14 }}>
+        <div key={`cls${cls.id}`} className="cls-row" style={{ paddingLeft: 4 + depth * 16 }}>
+          <button className="chev" onClick={() => toggleOpen(cls.id)}
+            aria-label={open ? '收摺' : '展開'} style={{ visibility: hasKids ? 'visible' : 'hidden' }}>
+            {open ? '▾' : '▸'}
+          </button>
           <span className="cls-code mono">{cls.code}</span>
           <span className="cls-name">{cls.name}</span>
+          {!open && hasKids && <span className="muted" style={{ fontSize: 11, flex: 'none' }}>{tpls.length ? `${tpls.length} 模版` : ''}</span>}
           <span className="cls-acts">
             <button title="新增子節點" onClick={() => newClass(cls.id)}>＋節點</button>
             <button title="在此節點建立模版" onClick={() => newTemplate(cls.id)}>＋模版</button>
@@ -99,15 +122,17 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
           </span>
         </div>
       );
-      for (const d of (tree?.docs ?? []).filter(x => x.is_template && x.class_id === cls.id)) {
-        out.push(
-          <button key={`tpl${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
-            style={{ paddingLeft: 24 + depth * 14 }} onClick={() => setCurDoc(d.id)}>
-            <span className="tpl-badge">模</span>{d.title || '未命名模版'}
-          </button>
-        );
+      if (open) {
+        for (const d of tpls) {
+          out.push(
+            <button key={`tpl${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
+              style={{ paddingLeft: 40 + depth * 16 }} onClick={() => setCurDoc(d.id)}>
+              <span className="tpl-badge">模</span>{d.title || '未命名模版'}
+            </button>
+          );
+        }
+        out.push(...renderClasses(cls.id, depth + 1));
       }
-      out.push(...renderClasses(cls.id, depth + 1));
     }
     return out;
   };
@@ -152,45 +177,63 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
           <button className="btn" onClick={onHome}>← 首頁</button>
           <div><div className="eyebrow">功能模組</div><h1>文件中心</h1></div>
         </div>
+        <nav className="tabs" aria-label="檢視切換">
+          <button className={view === 'docs' ? 'on' : ''} onClick={() => setView('docs')}>文件</button>
+          <button className={view === 'index' ? 'on' : ''} onClick={() => setView('index')}>模版引索</button>
+        </nav>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn" onClick={newFolder}>＋ 資料夾</button>
-          <button className="btn" onClick={() => newTemplate(null)}>＋ 新模版</button>
-          <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
+          {view === 'docs' ? (
+            <>
+              <button className="btn" onClick={newFolder}>＋ 資料夾</button>
+              <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={() => newClass(null)}>＋ 根節點</button>
+              <button className="btn" onClick={() => newTemplate(null)}>＋ 未分類模版</button>
+            </>
+          )}
         </div>
       </header>
       <div className="docs-layout">
         <aside className="docs-side">
-          <input className="doc-search" placeholder="搜尋文件…" value={q} onChange={e => setQ(e.target.value)} />
-          {hits !== null ? (
+          {view === 'docs' ? (
             <>
-              <div className="side-label">搜尋結果（{hits.length}）</div>
-              {hits.map(d => (
-                <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
-                  {d.title || '未命名文件'}
-                </button>
-              ))}
+              <input className="doc-search" placeholder="搜尋文件（標題／內文／編號）…" value={q} onChange={e => setQ(e.target.value)} />
+              {hits !== null ? (
+                <>
+                  <div className="side-label">搜尋結果（{hits.length}）</div>
+                  {hits.map(d => (
+                    <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
+                      {d.doc_no && <span className="docno mono">{d.doc_no}</span>}{d.title || '未命名文件'}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {curFolder != null && <div className="side-label">新文件會建立在：{tree.folders.find(f => f.id === curFolder)?.name}</div>}
+                  {renderFolder(null, 0)}
+                  {rootDocs.length > 0 && <div className="side-label">未分類</div>}
+                  {rootDocs.map(d => (
+                    <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
+                      {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
+                    </button>
+                  ))}
+                  {tree.docs.filter(d => !d.is_template).length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有文件，按「＋ 新文件」開始。</p>}
+                </>
+              )}
             </>
           ) : (
             <>
-              <div className="side-label">模版引索樹
-                <button className="btn subtle" style={{ fontSize: 11, padding: '0 6px' }} onClick={() => newClass(null)}>＋根節點</button>
-              </div>
+              <div className="side-label">模版引索樹（點 ▸ 展開）</div>
               {renderClasses(null, 0)}
+              {classes.length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有引索節點——按「＋ 根節點」建第一層（例如部門），再往下建類型。</p>}
               {templates.filter(d => !d.class_id).length > 0 && <div className="side-label">未分類模版</div>}
               {templates.filter(d => !d.class_id).map(d => (
                 <button key={`t${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
                   <span className="tpl-badge">模</span>{d.title || '未命名模版'}
                 </button>
               ))}
-              {curFolder != null && <div className="side-label">新文件會建立在：{tree.folders.find(f => f.id === curFolder)?.name}</div>}
-              {renderFolder(null, 0)}
-              {rootDocs.length > 0 && <div className="side-label">未分類</div>}
-              {rootDocs.map(d => (
-                <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
-                  {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
-                </button>
-              ))}
-              {tree.docs.length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有文件，按「＋ 新文件」開始。</p>}
             </>
           )}
         </aside>
