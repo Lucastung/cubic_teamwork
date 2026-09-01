@@ -355,6 +355,58 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
     titleTimer.current = setTimeout(async () => { await api.patch(`/api/docs/${docId}`, { title }); onMetaChanged(); }, 800);
   };
 
+  /* ── 匯出 ── */
+  const escHtml = (s: string) => s.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]!));
+  const buildExportHtml = () => {
+    const content = editor.getHTML();
+    const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    return `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escHtml(doc.title)}</title><style>
+      @page{size:A4;margin:22mm 18mm}
+      body{font-family:'Noto Sans TC','Microsoft JhengHei','PingFang TC',sans-serif;color:#1a1a1a;font-size:12.5pt;line-height:1.75;max-width:720px;margin:0 auto;padding:24px}
+      .exp-hdr{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #1a1a1a;padding-bottom:6px;margin-bottom:4px;font-size:10pt;color:#555}
+      .exp-hdr .no{font-family:Consolas,Menlo,monospace;font-weight:600;letter-spacing:.03em}
+      h1.exp-title{font-size:17pt;margin:14px 0 4px}
+      .exp-meta{font-size:9.5pt;color:#777;margin-bottom:18px}
+      h1{font-size:15pt;margin:16px 0 6px}h2{font-size:13.5pt;margin:14px 0 5px}h3{font-size:12.5pt;margin:12px 0 4px}
+      p{margin:5px 0}ul,ol{padding-left:22px}
+      table{border-collapse:collapse;width:100%;margin:8px 0}
+      th,td{border:1px solid #999;padding:5px 9px;text-align:left;font-size:11.5pt}
+      th{background:#f0f0f0;font-weight:700}
+      blockquote{border-left:3px solid #888;margin:8px 0;padding:2px 12px;color:#555}
+      pre{background:#f4f4f4;border-radius:4px;padding:10px 12px;font-family:Consolas,Menlo,monospace;font-size:10pt;white-space:pre-wrap}
+      code{background:#f4f4f4;border-radius:3px;padding:1px 4px;font-family:Consolas,Menlo,monospace;font-size:10.5pt}
+      img{max-width:100%}
+      ul[data-type="taskList"]{list-style:none;padding-left:4px}
+      ul[data-type="taskList"] li{display:flex;gap:8px;align-items:flex-start}
+      @media print{body{padding:0}}
+    </style></head><body>
+      <div class="exp-hdr"><span class="no">${escHtml(doc.doc_no ?? '')}</span><span>${doc.is_template ? '表單模版' : '文件'}</span></div>
+      <h1 class="exp-title">${escHtml(doc.title)}</h1>
+      <div class="exp-meta">版本 v${doc.version_no}　匯出日期 ${today}</div>
+      ${content}
+    </body></html>`;
+  };
+  const exportPdf = () => {
+    const w = window.open('', '_blank');
+    if (!w) { alert('瀏覽器阻擋了彈出視窗，請允許後重試'); return; }
+    w.document.write(buildExportHtml());
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 400);
+  };
+  const exportWord = () => {
+    const html = buildExportHtml().replace('<html lang="zh-Hant">',
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" lang="zh-Hant">');
+    const blob = new Blob(['﻿', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.doc_no ? doc.doc_no + '_' : ''}${doc.title || '文件'}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   const uploadImage = () => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*';
@@ -418,6 +470,12 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
             <option value="">未分類</option>
             {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
+          )}
+          {(me.role === 'admin' || me.role === 'pm' || doc.created_by === me.id) && (
+            <>
+              <button className="btn" title="開啟列印視圖，選「另存為 PDF」" onClick={exportPdf}>PDF</button>
+              <button className="btn" title="下載 Word 檔（.doc）" onClick={exportWord}>Word</button>
+            </>
           )}
           <button className="btn" onClick={() => setPanel(panel === 'versions' ? 'none' : 'versions')}>版本</button>
           {doc.my_level === 'manage' && <button className="btn" onClick={() => setPanel(panel === 'perms' ? 'none' : 'perms')}>權限</button>}
