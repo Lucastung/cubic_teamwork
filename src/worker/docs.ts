@@ -69,12 +69,65 @@ async function updateFts(db: D1Database, docId: number, title: string, body: str
   ]);
 }
 
+/* ── 模版編碼引索樹 ── */
+docsApp.get('/tpl-classes', async c => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM tpl_classes ORDER BY parent_id, sort, id').all();
+  return c.json(results);
+});
+docsApp.post('/tpl-classes', async c => {
+  const { name, code, parent_id = null } = await c.req.json();
+  if (!name?.trim() || !code?.trim()) return c.json({ error: '請輸入名稱與代號' }, 400);
+  const cleanCode = String(code).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!cleanCode) return c.json({ error: '代號限英數字' }, 400);
+  const dup = await c.env.DB.prepare('SELECT 1 FROM tpl_classes WHERE parent_id IS ? AND code = ?')
+    .bind(parent_id, cleanCode).first();
+  if (dup) return c.json({ error: `同一層已有代號 ${cleanCode}` }, 409);
+  const r = await c.env.DB.prepare('INSERT INTO tpl_classes (name, code, parent_id) VALUES (?, ?, ?)')
+    .bind(name.trim(), cleanCode, parent_id).run();
+  return c.json({ id: r.meta.last_row_id, code: cleanCode });
+});
+docsApp.patch('/tpl-classes/:id', async c => {
+  const id = Number(c.req.param('id'));
+  const { name, code } = await c.req.json();
+  if (name !== undefined) await c.env.DB.prepare('UPDATE tpl_classes SET name = ? WHERE id = ?').bind(name, id).run();
+  if (code !== undefined) {
+    const cleanCode = String(code).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!cleanCode) return c.json({ error: '代號限英數字' }, 400);
+    await c.env.DB.prepare('UPDATE tpl_classes SET code = ? WHERE id = ?').bind(cleanCode, id).run();
+  }
+  return c.json({ ok: true });
+});
+docsApp.delete('/tpl-classes/:id', async c => {
+  const id = Number(c.req.param('id'));
+  const child = await c.env.DB.prepare('SELECT 1 FROM tpl_classes WHERE parent_id = ?').bind(id).first();
+  if (child) return c.json({ error: '請先刪除子節點' }, 400);
+  const tpl = await c.env.DB.prepare('SELECT 1 FROM docs WHERE class_id = ? AND is_template = 1').bind(id).first();
+  if (tpl) return c.json({ error: '這個節點下還有模版，請先移走' }, 400);
+  await c.env.DB.prepare('DELETE FROM tpl_classes WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+/** 由模版的節點路徑生成文件編號：CODE1-CODE2-YYYYMMDD-NNN（依節點+日期流水） */
+async function genDocNo(db: D1Database, classId: number | null): Promise<string | null> {
+  if (!classId) return null;
+  const classes = (await db.prepare('SELECT * FROM tpl_classes').all()).results as any[];
+  const map = new Map(classes.map(x => [x.id, x]));
+  const codes: string[] = [];
+  let cur = map.get(classId);
+  while (cur) { codes.unshift(cur.code); cur = cur.parent_id != null ? map.get(cur.parent_id) : undefined; }
+  if (!codes.length) return null;
+  const date = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, ''); // 台北時間
+  const prefix = `${codes.join('-')}-${date}-`;
+  const n = await db.prepare(`SELECT COUNT(*) AS n FROM docs WHERE doc_no LIKE ?`).bind(`${prefix}%`).first<{ n: number }>();
+  return `${prefix}${String((n?.n ?? 0) + 1).padStart(3, '0')}`;
+}
+
 /* ── 樹狀列表 ── */
 docsApp.get('/docs/tree', async c => {
   const user = c.get('user');
   const acl = await loadAcl(c.env.DB);
   const docs = (await c.env.DB.prepare(
-    'SELECT id, folder_id, title, restricted, is_template, created_by, updated_at FROM docs ORDER BY updated_at DESC'
+    'SELECT id, folder_id, title, restricted, is_template, class_id, doc_no, created_by, updated_at FROM docs ORDER BY updated_at DESC'
   ).all()).results as any[];
   const visibleDocs = docs
     .map(d => ({ ...d, my_level: acl.levelFor(user, d) }))
@@ -121,30 +174,33 @@ docsApp.delete('/folders/:id', async c => {
 /* ── 文件 CRUD ── */
 docsApp.post('/docs', async c => {
   const user = c.get('user');
-  const { title, folder_id = null, entity_type, entity_id, is_template = 0, template_id = null } = await c.req.json();
+  const { title, folder_id = null, entity_type, entity_id, is_template = 0, template_id = null, class_id = null } = await c.req.json();
   let content = { json: '{}', html: '', text: '' };
   let finalTitle = title?.trim() || '未命名文件';
+  let docNo: string | null = null;
   if (template_id) {
     const tpl = await getDoc(c.env.DB, Number(template_id));
     if (!tpl || !tpl.is_template) return c.json({ error: '找不到模版' }, 404);
     const tv = await c.env.DB.prepare('SELECT * FROM doc_versions WHERE id = ?').bind(tpl.current_version_id).first<any>();
     if (tv) content = { json: tv.content_json, html: tv.content_html, text: tv.content_text };
     if (!title?.trim()) finalTitle = tpl.title;
+    docNo = await genDocNo(c.env.DB, tpl.class_id);   // 依模版節點路徑自動編號
   }
-  const r = await c.env.DB.prepare('INSERT INTO docs (title, folder_id, is_template, created_by) VALUES (?, ?, ?, ?)')
-    .bind(finalTitle, folder_id, is_template ? 1 : 0, user.id).run();
+  const r = await c.env.DB.prepare(
+    'INSERT INTO docs (title, folder_id, is_template, class_id, doc_no, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(finalTitle, folder_id, is_template ? 1 : 0, is_template ? class_id : null, docNo, user.id).run();
   const docId = r.meta.last_row_id as number;
   const v = await c.env.DB.prepare(
     `INSERT INTO doc_versions (doc_id, version_no, content_json, content_html, content_text, author_id, note)
      VALUES (?, 1, ?, ?, ?, ?, ?)`
-  ).bind(docId, content.json, content.html, content.text, user.id, template_id ? '由模版建立' : null).run();
+  ).bind(docId, content.json, content.html, content.text, user.id, template_id ? `由模版建立${docNo ? `（${docNo}）` : ''}` : null).run();
   await c.env.DB.prepare('UPDATE docs SET current_version_id = ? WHERE id = ?').bind(v.meta.last_row_id, docId).run();
-  await updateFts(c.env.DB, docId, finalTitle, content.text);
+  await updateFts(c.env.DB, docId, `${docNo ? docNo + ' ' : ''}${finalTitle}`, content.text);
   if (entity_type && entity_id) {
     await c.env.DB.prepare('INSERT OR IGNORE INTO doc_links (doc_id, entity_type, entity_id) VALUES (?, ?, ?)')
       .bind(docId, entity_type, entity_id).run();
   }
-  return c.json({ id: docId });
+  return c.json({ id: docId, doc_no: docNo });
 });
 
 /** 把現有文件另存為模版 */
@@ -180,13 +236,15 @@ docsApp.get('/docs/:id', async c => {
 docsApp.patch('/docs/:id', async c => {
   const r = await requireDoc(c, 'edit');
   if (r instanceof Response) return r;
-  const { title, folder_id, restricted } = await c.req.json();
+  const { title, folder_id, restricted, class_id } = await c.req.json();
   if (title !== undefined) {
     await c.env.DB.prepare(`UPDATE docs SET title = ?, updated_at = datetime('now') WHERE id = ?`).bind(title, r.doc.id).run();
     const v = await c.env.DB.prepare('SELECT content_text FROM doc_versions WHERE id = ?').bind(r.doc.current_version_id).first<any>();
-    await updateFts(c.env.DB, r.doc.id, title, v?.content_text ?? '');
+    await updateFts(c.env.DB, r.doc.id, `${r.doc.doc_no ? r.doc.doc_no + ' ' : ''}${title}`, v?.content_text ?? '');
   }
   if (folder_id !== undefined) await c.env.DB.prepare('UPDATE docs SET folder_id = ? WHERE id = ?').bind(folder_id, r.doc.id).run();
+  if (class_id !== undefined && r.doc.is_template)
+    await c.env.DB.prepare('UPDATE docs SET class_id = ? WHERE id = ?').bind(class_id, r.doc.id).run();
   if (restricted !== undefined) {
     if (RANK[r.level] < RANK.manage) return c.json({ error: '權限不足' }, 403);
     await c.env.DB.prepare('UPDATE docs SET restricted = ? WHERE id = ?').bind(restricted ? 1 : 0, r.doc.id).run();
@@ -227,7 +285,7 @@ docsApp.put('/docs/:id/content', async c => {
   }
   await c.env.DB.prepare(`UPDATE docs SET current_version_id = ?, updated_at = datetime('now') WHERE id = ?`)
     .bind(versionId, r.doc.id).run();
-  await updateFts(c.env.DB, r.doc.id, r.doc.title, content_text ?? '');
+  await updateFts(c.env.DB, r.doc.id, `${r.doc.doc_no ? r.doc.doc_no + ' ' : ''}${r.doc.title}`, content_text ?? '');
   return c.json({ ok: true, version_id: versionId });
 });
 
@@ -280,8 +338,8 @@ docsApp.get('/docs-search', async c => {
     const { results } = await c.env.DB.prepare(
       `SELECT DISTINCT d.id FROM docs d
        LEFT JOIN doc_versions v ON v.id = d.current_version_id
-       WHERE d.title LIKE ? OR v.content_text LIKE ? LIMIT 50`
-    ).bind(`%${q}%`, `%${q}%`).all();
+       WHERE d.title LIKE ? OR d.doc_no LIKE ? OR v.content_text LIKE ? LIMIT 50`
+    ).bind(`%${q}%`, `%${q}%`, `%${q}%`).all();
     ids = (results as any[]).map(r => r.id);
   } else {
     const { results } = await c.env.DB.prepare(
@@ -291,7 +349,7 @@ docsApp.get('/docs-search', async c => {
   }
   if (!ids.length) return c.json([]);
   const { results: docs } = await c.env.DB.prepare(
-    `SELECT id, folder_id, title, restricted, is_template, created_by, updated_at FROM docs WHERE id IN (${ids.map(() => '?').join(',')})`
+    `SELECT id, folder_id, title, restricted, is_template, class_id, doc_no, created_by, updated_at FROM docs WHERE id IN (${ids.map(() => '?').join(',')})`
   ).bind(...ids).all();
   const visible = (docs as any[])
     .map(d => ({ ...d, my_level: acl.levelFor(user, d) }))

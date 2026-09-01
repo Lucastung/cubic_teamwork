@@ -12,18 +12,36 @@ import TaskItem from '@tiptap/extension-task-item';
 import { api, User } from './api';
 
 type FolderT = { id: number; parent_id: number | null; name: string; restricted: number; my_level: string };
-type DocMeta = { id: number; folder_id: number | null; title: string; restricted: number; is_template?: number; updated_at: string; my_level: string };
+type DocMeta = {
+  id: number; folder_id: number | null; title: string; restricted: number;
+  is_template?: number; class_id?: number | null; doc_no?: string | null;
+  updated_at: string; my_level: string;
+};
 type Tree = { folders: FolderT[]; docs: DocMeta[] };
+export type ClsT = { id: number; parent_id: number | null; name: string; code: string };
+
+export function classPathLabel(classes: ClsT[], id: number | null | undefined): string {
+  if (!id) return '';
+  const map = new Map(classes.map(x => [x.id, x]));
+  const parts: string[] = [];
+  let cur = map.get(id);
+  while (cur) { parts.unshift(cur.code); cur = cur.parent_id != null ? map.get(cur.parent_id) : undefined; }
+  return parts.join('-');
+}
 
 /* ═══════════ 文件中心主頁 ═══════════ */
 export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   const [tree, setTree] = useState<Tree | null>(null);
+  const [classes, setClasses] = useState<ClsT[]>([]);
   const [curDoc, setCurDoc] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<DocMeta[] | null>(null);
   const [curFolder, setCurFolder] = useState<number | null>(null);
 
-  const reload = () => api.get<Tree>('/api/docs/tree').then(setTree);
+  const reload = () => {
+    api.get<Tree>('/api/docs/tree').then(setTree);
+    api.get<ClsT[]>('/api/tpl-classes').then(setClasses).catch(() => {});
+  };
   useEffect(() => { reload(); }, []);
 
   useEffect(() => {
@@ -37,12 +55,61 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
     await reload();
     setCurDoc(r.id);
   };
-  const newTemplate = async () => {
+  const newTemplate = async (classId: number | null = null) => {
     const title = prompt('模版名稱？（例如：實驗記錄表、請購單）');
     if (!title?.trim()) return;
-    const r = await api.post<{ id: number }>('/api/docs', { title, is_template: 1 });
+    const r = await api.post<{ id: number }>('/api/docs', { title, is_template: 1, class_id: classId });
     await reload();
     setCurDoc(r.id);
+  };
+  const newClass = async (parentId: number | null) => {
+    const name = prompt('節點名稱？（例如：研發部、實驗記錄）');
+    if (!name?.trim()) return;
+    const code = prompt('節點代號？（英數字，例如 RD、EXP，會成為文件編號的一段）');
+    if (!code?.trim()) return;
+    try { await api.post('/api/tpl-classes', { name, code, parent_id: parentId }); await reload(); }
+    catch (ex: any) { alert(ex.message); }
+  };
+  const editClass = async (cls: ClsT) => {
+    const name = prompt('節點名稱：', cls.name);
+    if (name === null) return;
+    const code = prompt('節點代號：', cls.code);
+    if (code === null) return;
+    await api.patch(`/api/tpl-classes/${cls.id}`, { name, code });
+    await reload();
+  };
+  const delClass = async (cls: ClsT) => {
+    if (!confirm(`刪除節點「${cls.name}」？（底下有子節點或模版時無法刪除）`)) return;
+    try { await api.del(`/api/tpl-classes/${cls.id}`); await reload(); }
+    catch (ex: any) { alert(ex.message); }
+  };
+
+  const renderClasses = (parent: number | null, depth: number): JSX.Element[] => {
+    const out: JSX.Element[] = [];
+    for (const cls of classes.filter(x => x.parent_id === parent)) {
+      out.push(
+        <div key={`cls${cls.id}`} className="cls-row" style={{ paddingLeft: 8 + depth * 14 }}>
+          <span className="cls-code mono">{cls.code}</span>
+          <span className="cls-name">{cls.name}</span>
+          <span className="cls-acts">
+            <button title="新增子節點" onClick={() => newClass(cls.id)}>＋節點</button>
+            <button title="在此節點建立模版" onClick={() => newTemplate(cls.id)}>＋模版</button>
+            <button title="編輯" onClick={() => editClass(cls)}>✎</button>
+            <button title="刪除" onClick={() => delClass(cls)}>✕</button>
+          </span>
+        </div>
+      );
+      for (const d of (tree?.docs ?? []).filter(x => x.is_template && x.class_id === cls.id)) {
+        out.push(
+          <button key={`tpl${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
+            style={{ paddingLeft: 24 + depth * 14 }} onClick={() => setCurDoc(d.id)}>
+            <span className="tpl-badge">模</span>{d.title || '未命名模版'}
+          </button>
+        );
+      }
+      out.push(...renderClasses(cls.id, depth + 1));
+    }
+    return out;
   };
   const newFolder = async () => {
     const name = prompt('資料夾名稱？');
@@ -87,7 +154,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn" onClick={newFolder}>＋ 資料夾</button>
-          <button className="btn" onClick={newTemplate}>＋ 新模版</button>
+          <button className="btn" onClick={() => newTemplate(null)}>＋ 新模版</button>
           <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
         </div>
       </header>
@@ -105,8 +172,12 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
             </>
           ) : (
             <>
-              {templates.length > 0 && <div className="side-label">表單模版</div>}
-              {templates.map(d => (
+              <div className="side-label">模版引索樹
+                <button className="btn subtle" style={{ fontSize: 11, padding: '0 6px' }} onClick={() => newClass(null)}>＋根節點</button>
+              </div>
+              {renderClasses(null, 0)}
+              {templates.filter(d => !d.class_id).length > 0 && <div className="side-label">未分類模版</div>}
+              {templates.filter(d => !d.class_id).map(d => (
                 <button key={`t${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
                   <span className="tpl-badge">模</span>{d.title || '未命名模版'}
                 </button>
@@ -126,7 +197,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         <main className="docs-main">
           {curDoc == null
             ? <div className="doc-empty muted">選一份文件，或建立新文件</div>
-            : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} onMetaChanged={reload}
+            : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} classes={classes} onMetaChanged={reload}
                 onDeleted={() => { setCurDoc(null); reload(); }} onOpenDoc={id => { setCurDoc(id); reload(); }} />}
         </main>
       </div>
@@ -135,8 +206,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
 }
 
 /* ═══════════ 編輯器（可獨立嵌入 PM）═══════════ */
-export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted, onOpenDoc }: {
-  docId: number; me: User; folders: FolderT[]; onMetaChanged: () => void; onDeleted: () => void;
+export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDeleted, onOpenDoc }: {
+  docId: number; me: User; folders: FolderT[]; classes?: ClsT[]; onMetaChanged: () => void; onDeleted: () => void;
   onOpenDoc?: (id: number) => void;
 }) {
   const [doc, setDoc] = useState<any>(null);
@@ -211,6 +282,7 @@ export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted, onOpen
     <div className="doc-editor">
       <div className="doc-head">
         {!!doc.is_template && <span className="stchip st-amber" style={{ flex: 'none' }}>模版</span>}
+        {doc.doc_no && <span className="docno mono" title="文件編號（自動生成，不可變）">{doc.doc_no}</span>}
         <input className="doc-title" value={doc.title} placeholder="文件標題" readOnly={!canEdit}
           onChange={e => setTitle(e.target.value)} />
         <div className="doc-headr">
@@ -233,11 +305,24 @@ export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted, onOpen
             }}>另存為模版</button>
           )}
           <span className="muted save-state">{saved === 'saving' ? '儲存中…' : saved === 'saved' ? '已儲存' : `v${doc.version_no}`}</span>
+          {!!doc.is_template && classes && classes.length > 0 && (
+            <select value={doc.class_id ?? ''} disabled={!canEdit} aria-label="引索節點" title="模版所屬引索節點（決定生成文件的編號前綴）"
+              onChange={async e => {
+                await api.patch(`/api/docs/${docId}`, { class_id: e.target.value ? Number(e.target.value) : null });
+                setDoc({ ...doc, class_id: e.target.value ? Number(e.target.value) : null });
+                onMetaChanged();
+              }}>
+              <option value="">未掛引索節點</option>
+              {classes.map(cl => <option key={cl.id} value={cl.id}>{classPathLabel(classes, cl.id)}｜{cl.name}</option>)}
+            </select>
+          )}
+          {!doc.is_template && (
           <select value={doc.folder_id ?? ''} disabled={!canEdit} aria-label="所在資料夾"
             onChange={async e => { await api.patch(`/api/docs/${docId}`, { folder_id: e.target.value ? Number(e.target.value) : null }); onMetaChanged(); }}>
             <option value="">未分類</option>
             {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
+          )}
           <button className="btn" onClick={() => setPanel(panel === 'versions' ? 'none' : 'versions')}>版本</button>
           {doc.my_level === 'manage' && <button className="btn" onClick={() => setPanel(panel === 'perms' ? 'none' : 'perms')}>權限</button>}
           {doc.my_level === 'manage' && <button className="btn subtle" onClick={async () => {
@@ -387,7 +472,10 @@ export function EntityDocs({ entityType, entityId, me, onOpenDoc }: {
     <div className="entity-docs">
       {docs.map(d => (
         <div key={d.id} className="edoc-row">
-          <button className="edoc-open" onClick={() => onOpenDoc(d.id)}>{d.title || '未命名文件'}</button>
+          <button className="edoc-open" onClick={() => onOpenDoc(d.id)}>
+            {d.doc_no && <span className="docno mono" style={{ marginRight: 6 }}>{d.doc_no}</span>}
+            {d.title || '未命名文件'}
+          </button>
           <span className="muted mono">{d.updated_at.slice(5, 10)}</span>
           <button className="btn subtle" title="取消連結" onClick={async () => {
             await fetch('/api/entity-docs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc_id: d.id, entity_type: entityType, entity_id: entityId }) });
