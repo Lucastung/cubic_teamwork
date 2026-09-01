@@ -413,7 +413,8 @@ function MembersPage({ onHome }: { onHome: () => void }) {
 /* ── 系統備份與還原（管理員）── */
 function BackupPanel() {
   const [backups, setBackups] = useState<{ key: string; size: number; uploaded: string }[]>([]);
-  const [target, setTarget] = useState<{ kind: 'key'; key: string } | { kind: 'file'; backup: any; name: string } | null>(null);
+  const [target, setTarget] = useState<
+    { kind: 'key'; key: string } | { kind: 'file'; backup: any; name: string } | { kind: 'files'; file: File; name: string } | null>(null);
   const [pw, setPw] = useState('');
   const [confirmTxt, setConfirmTxt] = useState('');
   const [busy, setBusy] = useState(false);
@@ -436,6 +437,18 @@ function BackupPanel() {
   const doRestore = async () => {
     setErr(''); setBusy(true);
     try {
+      if (target!.kind === 'files') {
+        const fd = new FormData();
+        fd.append('file', (target as any).file);
+        fd.append('password', pw);
+        fd.append('confirm', confirmTxt);
+        const res = await fetch('/api/restore-files', { method: 'POST', body: fd });
+        const data = await res.json() as any;
+        if (!res.ok) throw new Error(data.error || '還原失敗');
+        alert(`附件還原完成（${data.restored_files} 個檔案）`);
+        setTarget(null); setBusy(false);
+        return;
+      }
       const body = target!.kind === 'key'
         ? { key: target!.key, password: pw, confirm: confirmTxt }
         : { backup: (target as any).backup, password: pw, confirm: confirmTxt };
@@ -446,16 +459,29 @@ function BackupPanel() {
     } catch (ex: any) { setErr(ex.message); setBusy(false); }
   };
 
+  const downloadFilesBackup = async () => {
+    const res = await fetch('/api/backup-files');
+    if (!res.ok) { alert('附件備份失敗'); return; }
+    const blob = await res.blob();
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `cubic-files-${date}.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   return (
     <div className="card" style={{ marginTop: 18 }}>
       <div className="side-label" style={{ margin: '0 0 8px' }}>系統備份與還原</div>
       <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
-        備份包含全部資料庫資料（成員、專案、任務、文件、單據、簽核記錄…）。附件圖片存於雲端儲存、不隨備份檔打包，還原到本系統時附件不受影響。系統每天凌晨兩點自動備份、保留最近 30 份。
+        「資料備份」包含全部資料庫資料（成員、專案、任務、文件、單據、簽核記錄…）；「附件備份」把所有圖片附件打包成 ZIP。兩者搭配即為完整異地備份。系統每天凌晨兩點自動做資料備份、保留最近 30 份；資料還原不會動到附件。
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <button className="btn primary" onClick={downloadBackup}>下載完整備份</button>
+        <button className="btn primary" onClick={downloadBackup}>下載資料備份</button>
+        <button className="btn" onClick={downloadFilesBackup}>下載附件備份（ZIP）</button>
         <label className="btn" style={{ cursor: 'pointer' }}>
-          從檔案還原…
+          從資料備份還原…
           <input type="file" accept=".json,application/json" style={{ display: 'none' }}
             onChange={e => {
               const f = e.target.files?.[0];
@@ -466,6 +492,17 @@ function BackupPanel() {
                 catch { alert('不是有效的 JSON 備份檔'); }
               };
               reader.readAsText(f);
+              e.target.value = '';
+            }} />
+        </label>
+        <label className="btn" style={{ cursor: 'pointer' }}>
+          從 ZIP 還原附件…
+          <input type="file" accept=".zip,application/zip" style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              setTarget({ kind: 'files', file: f, name: f.name });
+              setPw(''); setConfirmTxt('');
               e.target.value = '';
             }} />
         </label>
@@ -489,8 +526,10 @@ function BackupPanel() {
           <div className="modal-card" role="dialog" aria-label="還原確認">
             <h3 style={{ margin: '0 0 6px', color: 'var(--danger)' }}>⚠ 還原系統資料</h3>
             <p style={{ fontSize: 13.5, margin: '0 0 10px' }}>
-              即將以{target.kind === 'key' ? `自動備份「${target.key.replace('backups/', '')}」` : `檔案「${(target as any).name}」`}
-              <b>覆蓋目前系統的全部資料</b>。這個動作不可復原，還原後所有人（包括你）需要重新登入。
+              {target.kind === 'files'
+                ? <>即將把「{(target as any).name}」內的附件檔案<b>寫回雲端儲存</b>（同名檔案會被覆蓋，資料庫不受影響）。</>
+                : <>即將以{target.kind === 'key' ? `自動備份「${target.key.replace('backups/', '')}」` : `檔案「${(target as any).name}」`}
+                  <b>覆蓋目前系統的全部資料</b>。這個動作不可復原，還原後所有人（包括你）需要重新登入。</>}
             </p>
             <div className="sign-box">
               <input type="password" placeholder="你的登入密碼" value={pw} onChange={e => setPw(e.target.value)} autoFocus />

@@ -24,6 +24,7 @@
     "@tiptap/extension-task-list": "^3.30.5",
     "@tiptap/react": "^3.30.5",
     "@tiptap/starter-kit": "^3.30.5",
+    "fflate": "^0.8.3",
     "hono": "^4.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

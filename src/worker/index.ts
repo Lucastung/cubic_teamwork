@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { docsApp } from './docs';
 import { erpApp } from './erp';
-import { dumpAll, validateBackup, restoreAll, runScheduledBackup } from './backup';
+import { dumpAll, validateBackup, restoreAll, runScheduledBackup, zipAllFiles, restoreFilesFromZip } from './backup';
 
 export interface Env {
   DB: D1Database;
@@ -443,6 +443,36 @@ app.get('/api/backup', adminOnly, async c => {
   return c.json(data, 200, {
     'Content-Disposition': `attachment; filename="cubic-backup-${date}.json"`,
   });
+});
+
+app.get('/api/backup-files', adminOnly, async c => {
+  const { zip, count } = await zipAllFiles(c.env.FILES);
+  const date = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+  return new Response(zip as unknown as BodyInit, {
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="cubic-files-${date}.zip"`,
+      'X-File-Count': String(count),
+    },
+  });
+});
+
+app.post('/api/restore-files', adminOnly, async c => {
+  const form = await c.req.formData();
+  const file = form.get('file') as File | null;
+  const password = String(form.get('password') ?? '');
+  const confirm = String(form.get('confirm') ?? '');
+  if (confirm !== 'RESTORE') return c.json({ error: '請輸入確認字樣 RESTORE' }, 400);
+  const me = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(c.get('user').id).first<any>();
+  if (!password || !(await verifyPassword(password, me.password_hash)))
+    return c.json({ error: '密碼錯誤' }, 401);
+  if (!file) return c.json({ error: '沒有 ZIP 檔' }, 400);
+  try {
+    const n = await restoreFilesFromZip(c.env.FILES, new Uint8Array(await file.arrayBuffer()));
+    return c.json({ ok: true, restored_files: n });
+  } catch {
+    return c.json({ error: '不是有效的附件備份 ZIP' }, 400);
+  }
 });
 
 app.get('/api/backups', adminOnly, async c => {
