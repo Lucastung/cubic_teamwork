@@ -86,6 +86,64 @@ docsApp.post('/tpl-classes', async c => {
     .bind(name.trim(), cleanCode, parent_id).run();
   return c.json({ id: r.meta.last_row_id, code: cleanCode });
 });
+/** 匯出：每行一個節點的完整路徑，Name(CODE) 以 Tab 分隔 */
+docsApp.get('/tpl-classes/export', async c => {
+  const classes = (await c.env.DB.prepare('SELECT * FROM tpl_classes ORDER BY parent_id, sort, id').all()).results as any[];
+  const map = new Map(classes.map(x => [x.id, x]));
+  const pathOf = (n: any): string => {
+    const parts: string[] = [];
+    let cur = n;
+    while (cur) { parts.unshift(`${cur.name}(${cur.code})`); cur = cur.parent_id != null ? map.get(cur.parent_id) : undefined; }
+    return parts.join('\t');
+  };
+  const lines: string[] = [];
+  const walk = (parent: number | null) => {
+    for (const n of classes.filter(x => x.parent_id === parent)) { lines.push(pathOf(n)); walk(n.id); }
+  };
+  walk(null);
+  return c.text(lines.join('\n'), 200, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Content-Disposition': 'attachment; filename="tpl-index.txt"',
+  });
+});
+
+/** 匯入：逐層以代號比對，不存在則建立；可重複匯入（冪等） */
+docsApp.post('/tpl-classes/import', async c => {
+  const { text } = await c.req.json();
+  if (!text?.trim()) return c.json({ error: '沒有內容' }, 400);
+  const SEG = /^\s*(.*?)\s*[（(]\s*([A-Za-z0-9]+)\s*[)）]\s*$/;
+  let created = 0, skipped = 0;
+  const badLines: number[] = [];
+  const lines = String(text).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const segs = line.split('\t').map(s => s.trim()).filter(Boolean);
+    const parsed: { name: string; code: string }[] = [];
+    let bad = false;
+    for (const seg of segs) {
+      const m = seg.match(SEG);
+      if (!m || !m[1]) { bad = true; break; }
+      parsed.push({ name: m[1], code: m[2].toUpperCase() });
+    }
+    if (bad || !parsed.length) { badLines.push(i + 1); continue; }
+    let parentId: number | null = null;
+    for (const p of parsed) {
+      const existing: any = await c.env.DB.prepare(
+        'SELECT id FROM tpl_classes WHERE parent_id IS ? AND code = ?'
+      ).bind(parentId, p.code).first();
+      if (existing) { parentId = existing.id; skipped++; }
+      else {
+        const r = await c.env.DB.prepare('INSERT INTO tpl_classes (name, code, parent_id) VALUES (?, ?, ?)')
+          .bind(p.name, p.code, parentId).run();
+        parentId = r.meta.last_row_id as number;
+        created++;
+      }
+    }
+  }
+  return c.json({ created, skipped, bad_lines: badLines });
+});
+
 docsApp.patch('/tpl-classes/:id', async c => {
   const id = Number(c.req.param('id'));
   const { name, code } = await c.req.json();

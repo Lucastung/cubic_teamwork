@@ -39,6 +39,26 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   const [curFolder, setCurFolder] = useState<number | null>(null);
   const [view, setView] = useState<'docs' | 'index'>('docs');
   const [expanded, setExpanded] = useState<Set<number> | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+
+  const exportTree = async () => {
+    const res = await fetch('/api/tpl-classes/export');
+    const text = await res.text();
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'tpl-index.txt'; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const doImport = async () => {
+    try {
+      const r = await api.post<{ created: number; skipped: number; bad_lines: number[] }>('/api/tpl-classes/import', { text: importText });
+      alert(`匯入完成：新增 ${r.created} 個節點、略過 ${r.skipped} 個已存在${r.bad_lines.length ? `；第 ${r.bad_lines.join(', ')} 行格式錯誤已跳過` : ''}`);
+      setShowImport(false); setImportText('');
+      setExpanded(null); // 重新載入後重算預設展開
+      await reload();
+    } catch (ex: any) { alert(ex.message); }
+  };
 
   // 預設只展開第一層
   useEffect(() => {
@@ -189,6 +209,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
             </>
           ) : (
             <>
+              <button className="btn" onClick={exportTree}>匯出</button>
+              <button className="btn" onClick={() => setShowImport(true)}>匯入</button>
               <button className="btn" onClick={() => newClass(null)}>＋ 根節點</button>
               <button className="btn" onClick={() => newTemplate(null)}>＋ 未分類模版</button>
             </>
@@ -243,6 +265,37 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
             : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} classes={classes} onMetaChanged={reload}
                 onDeleted={() => { setCurDoc(null); reload(); }} onOpenDoc={id => { setCurDoc(id); reload(); }} />}
         </main>
+        {showImport && (
+          <>
+            <div className="scrim show" onClick={() => setShowImport(false)} />
+            <div className="modal-card" role="dialog" aria-label="匯入引索樹">
+              <h3 style={{ margin: '0 0 6px' }}>匯入引索樹</h3>
+              <p className="muted" style={{ fontSize: 12.5, margin: '0 0 8px' }}>
+                每行一個節點的完整路徑，各層用 Tab 分隔，節點寫成 名稱(代號)。已存在的節點（同層同代號）會略過，可以放心重複匯入。範例：<br />
+                <code style={{ fontSize: 11.5 }}>研發部(RD)　→Tab→　實驗記錄(EXP)</code>
+              </p>
+              <textarea className="panel-desc" rows={10} value={importText} placeholder={'研發部(RD)\n研發部(RD)\t實驗記錄(EXP)\n行政部(ADM)\t請購單(PR)'}
+                onChange={e => setImportText(e.target.value)} style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5 }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="btn" style={{ cursor: 'pointer' }}>
+                  選擇檔案…
+                  <input type="file" accept=".txt,.tsv,.csv,text/plain" style={{ display: 'none' }}
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setImportText(String(reader.result ?? ''));
+                      reader.readAsText(f);
+                    }} />
+                </label>
+                <span style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn" onClick={() => setShowImport(false)}>取消</button>
+                  <button className="btn primary" disabled={!importText.trim()} onClick={doImport}>匯入</button>
+                </span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
