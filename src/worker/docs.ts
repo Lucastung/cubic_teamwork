@@ -74,7 +74,7 @@ docsApp.get('/docs/tree', async c => {
   const user = c.get('user');
   const acl = await loadAcl(c.env.DB);
   const docs = (await c.env.DB.prepare(
-    'SELECT id, folder_id, title, restricted, created_by, updated_at FROM docs ORDER BY updated_at DESC'
+    'SELECT id, folder_id, title, restricted, is_template, created_by, updated_at FROM docs ORDER BY updated_at DESC'
   ).all()).results as any[];
   const visibleDocs = docs
     .map(d => ({ ...d, my_level: acl.levelFor(user, d) }))
@@ -121,19 +121,48 @@ docsApp.delete('/folders/:id', async c => {
 /* ── 文件 CRUD ── */
 docsApp.post('/docs', async c => {
   const user = c.get('user');
-  const { title = '未命名文件', folder_id = null, entity_type, entity_id } = await c.req.json();
-  const r = await c.env.DB.prepare('INSERT INTO docs (title, folder_id, created_by) VALUES (?, ?, ?)')
-    .bind(title, folder_id, user.id).run();
+  const { title, folder_id = null, entity_type, entity_id, is_template = 0, template_id = null } = await c.req.json();
+  let content = { json: '{}', html: '', text: '' };
+  let finalTitle = title?.trim() || '未命名文件';
+  if (template_id) {
+    const tpl = await getDoc(c.env.DB, Number(template_id));
+    if (!tpl || !tpl.is_template) return c.json({ error: '找不到模版' }, 404);
+    const tv = await c.env.DB.prepare('SELECT * FROM doc_versions WHERE id = ?').bind(tpl.current_version_id).first<any>();
+    if (tv) content = { json: tv.content_json, html: tv.content_html, text: tv.content_text };
+    if (!title?.trim()) finalTitle = tpl.title;
+  }
+  const r = await c.env.DB.prepare('INSERT INTO docs (title, folder_id, is_template, created_by) VALUES (?, ?, ?, ?)')
+    .bind(finalTitle, folder_id, is_template ? 1 : 0, user.id).run();
   const docId = r.meta.last_row_id as number;
   const v = await c.env.DB.prepare(
-    `INSERT INTO doc_versions (doc_id, version_no, author_id) VALUES (?, 1, ?)`
-  ).bind(docId, user.id).run();
+    `INSERT INTO doc_versions (doc_id, version_no, content_json, content_html, content_text, author_id, note)
+     VALUES (?, 1, ?, ?, ?, ?, ?)`
+  ).bind(docId, content.json, content.html, content.text, user.id, template_id ? '由模版建立' : null).run();
   await c.env.DB.prepare('UPDATE docs SET current_version_id = ? WHERE id = ?').bind(v.meta.last_row_id, docId).run();
-  await updateFts(c.env.DB, docId, title, '');
+  await updateFts(c.env.DB, docId, finalTitle, content.text);
   if (entity_type && entity_id) {
     await c.env.DB.prepare('INSERT OR IGNORE INTO doc_links (doc_id, entity_type, entity_id) VALUES (?, ?, ?)')
       .bind(docId, entity_type, entity_id).run();
   }
+  return c.json({ id: docId });
+});
+
+/** 把現有文件另存為模版 */
+docsApp.post('/docs/:id/save-as-template', async c => {
+  const r = await requireDoc(c, 'read');
+  if (r instanceof Response) return r;
+  const user = c.get('user');
+  const v = await c.env.DB.prepare('SELECT * FROM doc_versions WHERE id = ?').bind(r.doc.current_version_id).first<any>();
+  const title = `${r.doc.title}（模版）`;
+  const nr = await c.env.DB.prepare('INSERT INTO docs (title, is_template, created_by) VALUES (?, 1, ?)')
+    .bind(title, user.id).run();
+  const docId = nr.meta.last_row_id as number;
+  const nv = await c.env.DB.prepare(
+    `INSERT INTO doc_versions (doc_id, version_no, content_json, content_html, content_text, author_id, note)
+     VALUES (?, 1, ?, ?, ?, ?, '另存自文件')`
+  ).bind(docId, v?.content_json ?? '{}', v?.content_html ?? '', v?.content_text ?? '', user.id).run();
+  await c.env.DB.prepare('UPDATE docs SET current_version_id = ? WHERE id = ?').bind(nv.meta.last_row_id, docId).run();
+  await updateFts(c.env.DB, docId, title, v?.content_text ?? '');
   return c.json({ id: docId });
 });
 
@@ -262,7 +291,7 @@ docsApp.get('/docs-search', async c => {
   }
   if (!ids.length) return c.json([]);
   const { results: docs } = await c.env.DB.prepare(
-    `SELECT id, folder_id, title, restricted, created_by, updated_at FROM docs WHERE id IN (${ids.map(() => '?').join(',')})`
+    `SELECT id, folder_id, title, restricted, is_template, created_by, updated_at FROM docs WHERE id IN (${ids.map(() => '?').join(',')})`
   ).bind(...ids).all();
   const visible = (docs as any[])
     .map(d => ({ ...d, my_level: acl.levelFor(user, d) }))

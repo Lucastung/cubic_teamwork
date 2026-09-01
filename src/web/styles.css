@@ -439,3 +439,11 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
   border:1px solid var(--line);flex:none;
 }
 .open-link:hover{color:var(--accent);border-color:var(--accent)}
+
+/* ═══ 文件模版 ═══ */
+.tpl-badge{
+  flex:none;width:18px;height:18px;border-radius:5px;
+  background:var(--warn-soft);color:var(--warn);
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:10.5px;font-weight:700;
+}

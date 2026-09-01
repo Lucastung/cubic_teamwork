@@ -12,7 +12,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import { api, User } from './api';
 
 type FolderT = { id: number; parent_id: number | null; name: string; restricted: number; my_level: string };
-type DocMeta = { id: number; folder_id: number | null; title: string; restricted: number; updated_at: string; my_level: string };
+type DocMeta = { id: number; folder_id: number | null; title: string; restricted: number; is_template?: number; updated_at: string; my_level: string };
 type Tree = { folders: FolderT[]; docs: DocMeta[] };
 
 /* ═══════════ 文件中心主頁 ═══════════ */
@@ -37,6 +37,13 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
     await reload();
     setCurDoc(r.id);
   };
+  const newTemplate = async () => {
+    const title = prompt('模版名稱？（例如：實驗記錄表、請購單）');
+    if (!title?.trim()) return;
+    const r = await api.post<{ id: number }>('/api/docs', { title, is_template: 1 });
+    await reload();
+    setCurDoc(r.id);
+  };
   const newFolder = async () => {
     const name = prompt('資料夾名稱？');
     if (!name?.trim()) return;
@@ -57,7 +64,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         </button>
       );
       out.push(...renderFolder(f.id, depth + 1));
-      for (const d of tree.docs.filter(x => x.folder_id === f.id)) {
+      for (const d of tree.docs.filter(x => x.folder_id === f.id && !x.is_template)) {
         out.push(
           <button key={`d${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
             style={{ paddingLeft: 28 + depth * 16 }} onClick={() => setCurDoc(d.id)}>
@@ -68,7 +75,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
     }
     return out;
   };
-  const rootDocs = tree.docs.filter(d => d.folder_id == null || !tree.folders.some(f => f.id === d.folder_id));
+  const rootDocs = tree.docs.filter(d => !d.is_template && (d.folder_id == null || !tree.folders.some(f => f.id === d.folder_id)));
+  const templates = tree.docs.filter(d => d.is_template);
 
   return (
     <div className="app docs-app">
@@ -77,8 +85,9 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
           <button className="btn" onClick={onHome}>← 首頁</button>
           <div><div className="eyebrow">功能模組</div><h1>文件中心</h1></div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn" onClick={newFolder}>＋ 資料夾</button>
+          <button className="btn" onClick={newTemplate}>＋ 新模版</button>
           <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
         </div>
       </header>
@@ -96,6 +105,12 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
             </>
           ) : (
             <>
+              {templates.length > 0 && <div className="side-label">表單模版</div>}
+              {templates.map(d => (
+                <button key={`t${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
+                  <span className="tpl-badge">模</span>{d.title || '未命名模版'}
+                </button>
+              ))}
               {curFolder != null && <div className="side-label">新文件會建立在：{tree.folders.find(f => f.id === curFolder)?.name}</div>}
               {renderFolder(null, 0)}
               {rootDocs.length > 0 && <div className="side-label">未分類</div>}
@@ -111,7 +126,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         <main className="docs-main">
           {curDoc == null
             ? <div className="doc-empty muted">選一份文件，或建立新文件</div>
-            : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} onMetaChanged={reload} onDeleted={() => { setCurDoc(null); reload(); }} />}
+            : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} onMetaChanged={reload}
+                onDeleted={() => { setCurDoc(null); reload(); }} onOpenDoc={id => { setCurDoc(id); reload(); }} />}
         </main>
       </div>
     </div>
@@ -119,8 +135,9 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
 }
 
 /* ═══════════ 編輯器（可獨立嵌入 PM）═══════════ */
-export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted }: {
+export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted, onOpenDoc }: {
   docId: number; me: User; folders: FolderT[]; onMetaChanged: () => void; onDeleted: () => void;
+  onOpenDoc?: (id: number) => void;
 }) {
   const [doc, setDoc] = useState<any>(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -193,9 +210,28 @@ export function DocEditor({ docId, me, folders, onMetaChanged, onDeleted }: {
   return (
     <div className="doc-editor">
       <div className="doc-head">
+        {!!doc.is_template && <span className="stchip st-amber" style={{ flex: 'none' }}>模版</span>}
         <input className="doc-title" value={doc.title} placeholder="文件標題" readOnly={!canEdit}
           onChange={e => setTitle(e.target.value)} />
         <div className="doc-headr">
+          {!!doc.is_template && (
+            <button className="btn primary" onClick={async () => {
+              const title = prompt('新文件標題？', doc.title);
+              if (title === null) return;
+              const r = await api.post<{ id: number }>('/api/docs', { template_id: docId, title });
+              onMetaChanged();
+              if (onOpenDoc) onOpenDoc(r.id);
+              else alert(`已由模版建立文件「${title || doc.title}」`);
+            }}>用此模版建立文件</button>
+          )}
+          {!doc.is_template && canEdit && (
+            <button className="btn" title="把目前內容存成一份可重複使用的模版" onClick={async () => {
+              const r = await api.post<{ id: number }>(`/api/docs/${docId}/save-as-template`);
+              onMetaChanged();
+              if (onOpenDoc) onOpenDoc(r.id);
+              else alert('已另存為模版');
+            }}>另存為模版</button>
+          )}
           <span className="muted save-state">{saved === 'saving' ? '儲存中…' : saved === 'saved' ? '已儲存' : `v${doc.version_no}`}</span>
           <select value={doc.folder_id ?? ''} disabled={!canEdit} aria-label="所在資料夾"
             onChange={async e => { await api.patch(`/api/docs/${docId}`, { folder_id: e.target.value ? Number(e.target.value) : null }); onMetaChanged(); }}>
@@ -345,6 +381,7 @@ export function EntityDocs({ entityType, entityId, me, onOpenDoc }: {
     await reload();
     onOpenDoc(r.id);
   };
+  const templates = all.filter(d => d.is_template);
 
   return (
     <div className="entity-docs">
@@ -360,6 +397,23 @@ export function EntityDocs({ entityType, entityId, me, onOpenDoc }: {
       ))}
       <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
         <button className="btn" onClick={createDoc}>＋ 新建文件</button>
+        {templates.length > 0 && (
+          <select defaultValue="" onChange={async e => {
+            if (!e.target.value) return;
+            const tpl = templates.find(t => t.id === Number(e.target.value))!;
+            e.target.value = '';
+            const title = prompt('文件標題？', tpl.title);
+            if (title === null) return;
+            const r = await api.post<{ id: number }>('/api/docs', {
+              template_id: tpl.id, title, entity_type: entityType, entity_id: entityId,
+            });
+            await reload();
+            onOpenDoc(r.id);
+          }}>
+            <option value="">＋ 從模版建立…</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+          </select>
+        )}
         <select defaultValue="" onChange={async e => {
           if (!e.target.value) return;
           await api.post('/api/entity-docs', { doc_id: Number(e.target.value), entity_type: entityType, entity_id: entityId });
@@ -367,7 +421,7 @@ export function EntityDocs({ entityType, entityId, me, onOpenDoc }: {
           reload();
         }}>
           <option value="">連結既有文件…</option>
-          {all.filter(d => !docs.some(x => x.id === d.id)).map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+          {all.filter(d => !d.is_template && !docs.some(x => x.id === d.id)).map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
         </select>
       </div>
     </div>
