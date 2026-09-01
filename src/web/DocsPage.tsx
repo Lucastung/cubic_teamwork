@@ -357,8 +357,29 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
 
   /* ── 匯出 ── */
   const escHtml = (s: string) => s.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]!));
-  const buildExportHtml = () => {
-    const content = editor.getHTML();
+  /** 把站內圖片抓下來內嵌成 base64，匯出檔才能離線顯示 */
+  const inlineImages = async (html: string): Promise<string> => {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    await Promise.all(Array.from(div.querySelectorAll('img')).map(async img => {
+      const src = img.getAttribute('src') || '';
+      if (!src || src.startsWith('data:')) return;
+      try {
+        const res = await fetch(src);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const dataUrl = await new Promise<string>(resolve => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result));
+          fr.readAsDataURL(blob);
+        });
+        img.setAttribute('src', dataUrl);
+      } catch { /* 圖抓不到就保留原樣 */ }
+    }));
+    return div.innerHTML;
+  };
+  const buildExportHtml = async () => {
+    const content = await inlineImages(editor.getHTML());
     const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
     return `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escHtml(doc.title)}</title><style>
       @page{size:A4;margin:22mm 18mm}
@@ -386,15 +407,15 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
       ${content}
     </body></html>`;
   };
-  const exportPdf = () => {
+  const exportPdf = async () => {
     const w = window.open('', '_blank');
     if (!w) { alert('瀏覽器阻擋了彈出視窗，請允許後重試'); return; }
-    w.document.write(buildExportHtml());
+    w.document.write(await buildExportHtml());
     w.document.close();
     setTimeout(() => { w.focus(); w.print(); }, 400);
   };
-  const exportWord = () => {
-    const html = buildExportHtml().replace('<html lang="zh-Hant">',
+  const exportWord = async () => {
+    const html = (await buildExportHtml()).replace('<html lang="zh-Hant">',
       '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" lang="zh-Hant">');
     const blob = new Blob(['﻿', html], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
