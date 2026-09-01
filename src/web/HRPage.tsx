@@ -4,7 +4,8 @@ import { api, User } from './api';
 
 const LEAVE_KINDS = ['事假', '病假', '特休', '公假', '婚假', '喪假', '其他'];
 const LSTAT: Record<string, { label: string; cls: string }> = {
-  pending: { label: '待核准', cls: 'st-blue' }, approved: { label: '已核准', cls: 'st-green' },
+  pending_deputy: { label: '待職代確認', cls: 'st-amber' },
+  pending: { label: '待主管核准', cls: 'st-blue' }, approved: { label: '已核准', cls: 'st-green' },
   rejected: { label: '已退回', cls: 'st-red' }, cancelled: { label: '已取消', cls: 'st-grey' },
 };
 const HALF = (h: string) => (h === 'am' ? '上午' : '下午');
@@ -119,6 +120,8 @@ export function HRPage({ me, onHome }: { me: User; onHome: () => void }) {
 function LeaveSection({ me }: { me: User }) {
   const [mine, setMine] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
+  const [deputyList, setDeputyList] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [form, setForm] = useState<any>(null);
   const [err, setErr] = useState('');
   const [rejectId, setRejectId] = useState<number | null>(null);
@@ -127,6 +130,8 @@ function LeaveSection({ me }: { me: User }) {
 
   const reload = () => {
     api.get<any[]>('/api/leaves').then(setMine);
+    api.get<any[]>('/api/leaves?scope=deputy').then(setDeputyList).catch(() => {});
+    api.get<User[]>('/api/users').then(setUsers).catch(() => {});
     if (isMgr) api.get<any[]>('/api/leaves?scope=pending').then(setPending).catch(() => {});
   };
   useEffect(() => { reload(); }, []);
@@ -160,7 +165,7 @@ function LeaveSection({ me }: { me: User }) {
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="side-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>差勤・我的請假</span>
-          <button className="btn primary" onClick={() => setForm(form ? null : { kind: '事假', start_date: today, start_half: 'am', end_date: today, end_half: 'pm', reason: '' })}>＋ 請假</button>
+          <button className="btn primary" onClick={() => setForm(form ? null : { kind: '事假', start_date: today, start_half: 'am', end_date: today, end_half: 'pm', reason: '', deputy_id: '' })}>＋ 請假</button>
         </div>
         {err && <div className="err" style={{ margin: '4px 0' }}>{err}</div>}
         {form && (
@@ -180,10 +185,15 @@ function LeaveSection({ me }: { me: User }) {
               </select>
               <b className="mono">{calcDays(form)} 天</b>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <input placeholder="事由（選填）" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} style={{ flex: 1 }} />
-              <button className="btn primary" onClick={submit} disabled={calcDays(form) <= 0}>送出</button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <select value={form.deputy_id} onChange={e => setForm({ ...form, deputy_id: e.target.value })} aria-label="職務代理人">
+                <option value="">選擇職代（必填）…</option>
+                {users.filter(u => u.id !== me.id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <input placeholder="事由（選填）" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} style={{ flex: 1, minWidth: 180 }} />
+              <button className="btn primary" onClick={submit} disabled={calcDays(form) <= 0 || !form.deputy_id}>送出</button>
             </div>
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>流程：送出 → 職代確認 → 主管核准。職代或主管退回後可修改重送。</p>
           </div>
         )}
         {mine.map(l => (
@@ -192,15 +202,43 @@ function LeaveSection({ me }: { me: User }) {
             <b>{l.kind}</b>
             <span className="mono" style={{ fontSize: 13 }}>{range(l)}</span>
             <span className="muted mono">{l.days} 天</span>
+            {l.deputy && <span className="muted" style={{ fontSize: 12 }}>職代：{l.deputy}</span>}
             {l.reason && <span className="muted">{l.reason}</span>}
             {l.status === 'rejected' && l.note && <span className="err" style={{ fontSize: 12 }}>退回：{l.note}</span>}
             {l.status === 'approved' && l.approver && <span className="muted" style={{ fontSize: 12 }}>核准：{l.approver}</span>}
-            {l.status === 'pending' && <button className="btn subtle" style={{ marginLeft: 'auto' }}
+            {['pending_deputy', 'pending'].includes(l.status) && <button className="btn subtle" style={{ marginLeft: 'auto' }}
               onClick={() => { if (confirm('取消這張請假單？')) act(l.id, 'cancel'); }}>取消</button>}
           </div>
         ))}
         {!mine.length && <p className="muted" style={{ margin: '6px 0' }}>還沒有請假紀錄。</p>}
       </div>
+
+      {deputyList.length > 0 && (
+        <div className="card" style={{ borderColor: 'var(--warn)', marginBottom: 14 }}>
+          <div className="side-label">待我確認的職代（同意後才會送到主管）</div>
+          {deputyList.map(l => (
+            <div key={l.id} style={{ borderBottom: '1px solid var(--line)', padding: '4px 0' }}>
+              <div className="member-row" style={{ border: 'none' }}>
+                <b>{l.user_name}</b>
+                <span>{l.kind}</span>
+                <span className="mono" style={{ fontSize: 13 }}>{range(l)}</span>
+                <span className="muted mono">{l.days} 天</span>
+                {l.reason && <span className="muted">{l.reason}</span>}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  <button className="btn primary" onClick={() => act(l.id, 'deputy_approve')}>同意代理</button>
+                  <button className="btn" onClick={() => setRejectId(rejectId === -l.id ? null : -l.id)}>退回…</button>
+                </span>
+              </div>
+              {rejectId === -l.id && (
+                <div style={{ display: 'flex', gap: 8, padding: '4px 0 6px' }}>
+                  <input placeholder="退回原因（必填，例如：當天我也請假）" value={rejectNote} onChange={e => setRejectNote(e.target.value)} style={{ flex: 1 }} />
+                  <button className="btn" onClick={() => act(l.id, 'deputy_reject', rejectNote)}>確認退回</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {isMgr && pending.length > 0 && (
         <div className="card" style={{ borderColor: 'var(--warn)' }}>
@@ -212,6 +250,7 @@ function LeaveSection({ me }: { me: User }) {
                 <span>{l.kind}</span>
                 <span className="mono" style={{ fontSize: 13 }}>{range(l)}</span>
                 <span className="muted mono">{l.days} 天</span>
+                {l.deputy && <span className="muted" style={{ fontSize: 12 }}>職代 {l.deputy} 已同意</span>}
                 {l.reason && <span className="muted">{l.reason}</span>}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                   <button className="btn primary" onClick={() => act(l.id, 'approve')}>核准</button>

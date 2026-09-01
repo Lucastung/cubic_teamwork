@@ -108,8 +108,16 @@ const LS_LABEL: Record<string, string> = { pending: '送出', approved: '核准'
 hrApp.get('/leaves', async c => {
   const u = c.get('user');
   const scope = c.req.query('scope');
-  const base = `SELECT l.*, u2.name AS user_name, au.name AS approver
-     FROM leaves l JOIN users u2 ON u2.id = l.user_id LEFT JOIN users au ON au.id = l.approved_by`;
+  const base = `SELECT l.*, u2.name AS user_name, au.name AS approver, du.name AS deputy
+     FROM leaves l JOIN users u2 ON u2.id = l.user_id
+     LEFT JOIN users au ON au.id = l.approved_by
+     LEFT JOIN users du ON du.id = l.deputy_id`;
+  if (scope === 'deputy') {
+    // 待我職代確認的假單
+    const { results } = await c.env.DB.prepare(
+      `${base} WHERE l.status = 'pending_deputy' AND l.deputy_id = ? ORDER BY l.start_date`).bind(u.id).all();
+    return c.json(results);
+  }
   if (scope === 'pending') {
     if (!isMgr(u)) return c.json([]);
     const { results } = await c.env.DB.prepare(
@@ -127,16 +135,20 @@ hrApp.get('/leaves', async c => {
 
 hrApp.post('/leaves', async c => {
   const u = c.get('user');
-  const { kind = '事假', start_date, start_half = 'am', end_date, end_half = 'pm', reason } = await c.req.json();
+  const { kind = '事假', start_date, start_half = 'am', end_date, end_half = 'pm', reason, deputy_id } = await c.req.json();
   if (!start_date || !end_date) return c.json({ error: '請選擇起訖日期' }, 400);
+  if (!deputy_id) return c.json({ error: '請選擇職務代理人' }, 400);
+  if (Number(deputy_id) === u.id) return c.json({ error: '職代不能選自己' }, 400);
+  const dep = await c.env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(Number(deputy_id)).first();
+  if (!dep) return c.json({ error: '找不到這位職代' }, 400);
   const days = calcDays(start_date, start_half, end_date, end_half);
   if (days <= 0) return c.json({ error: '起訖日期／時段不合理' }, 400);
   const r = await c.env.DB.prepare(
-    `INSERT INTO leaves (user_id, kind, start_date, start_half, end_date, end_half, days, reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(u.id, kind, start_date, start_half, end_date, end_half, days, reason ?? null).run();
+    `INSERT INTO leaves (user_id, kind, start_date, start_half, end_date, end_half, days, reason, deputy_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_deputy')`
+  ).bind(u.id, kind, start_date, start_half, end_date, end_half, days, reason ?? null, Number(deputy_id)).run();
   const id = r.meta.last_row_id as number;
-  await logEvent(c.env.DB, 'leave', id, '送出', u.id);
+  await logEvent(c.env.DB, 'leave', id, '送出（待職代確認）', u.id);
   return c.json({ id, days });
 });
 
@@ -148,10 +160,25 @@ hrApp.post('/leaves/:id/action', async c => {
   if (!l) return c.json({ error: '找不到請假單' }, 404);
 
   if (action === 'cancel') {
-    const ok = (l.user_id === u.id && l.status === 'pending') || (u.role === 'admin' && ['pending', 'approved'].includes(l.status));
-    if (!ok) return c.json({ error: '只有待核准的假單可以由本人取消' }, 403);
+    const ok = (l.user_id === u.id && ['pending_deputy', 'pending'].includes(l.status))
+      || (u.role === 'admin' && ['pending_deputy', 'pending', 'approved'].includes(l.status));
+    if (!ok) return c.json({ error: '只有核准前的假單可以由本人取消' }, 403);
     await c.env.DB.prepare(`UPDATE leaves SET status = 'cancelled' WHERE id = ?`).bind(id).run();
     await logEvent(c.env.DB, 'leave', id, '取消', u.id);
+    return c.json({ ok: true });
+  }
+  if (action === 'deputy_approve' || action === 'deputy_reject') {
+    if (l.deputy_id !== u.id) return c.json({ error: '只有職代本人可以確認' }, 403);
+    if (l.status !== 'pending_deputy') return c.json({ error: '這張假單不在待職代確認狀態' }, 400);
+    if (action === 'deputy_reject') {
+      if (!note?.trim()) return c.json({ error: '退回請填寫原因' }, 400);
+      await c.env.DB.prepare(`UPDATE leaves SET status = 'rejected', note = ? WHERE id = ?`)
+        .bind(`（職代退回）${note.trim()}`, id).run();
+      await logEvent(c.env.DB, 'leave', id, '職代退回', u.id);
+      return c.json({ ok: true });
+    }
+    await c.env.DB.prepare(`UPDATE leaves SET status = 'pending', deputy_at = datetime('now') WHERE id = ?`).bind(id).run();
+    await logEvent(c.env.DB, 'leave', id, '職代同意', u.id);
     return c.json({ ok: true });
   }
   if (action === 'approve' || action === 'reject') {
