@@ -4,6 +4,7 @@ import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
 import { ProgressPage, TaskDetailModal } from './ProgressPage';
+import { TaskPage } from './TaskPage';
 import { Model, STATE_LABEL, fdate, todayStr } from './model';
 import type { Node, Dep } from './api';
 
@@ -24,9 +25,15 @@ export function App() {
     })();
   }, []);
 
+  const taskRoute = (() => {
+    const m = window.location.pathname.match(/^\/task\/(\d+)$/);
+    return m ? Number(m[1]) : null;
+  })();
+
   if (loading) return null;
   if (needsSetup) return <Setup onDone={() => setNeedsSetup(false)} />;
   if (!user) return <Login onLogin={setUser} />;
+  if (taskRoute != null) return <TaskPage id={taskRoute} me={user} />;
   return <Shell user={user} onLogout={() => setUser(null)} />;
 }
 

@@ -298,7 +298,7 @@ function ProjectPanel({ project, model, me, onOpenDoc }: {
 }
 
 /* ═══ 右欄：節點詳情＋文件 ═══ */
-function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDeleted }: {
+export function NodePanel({ model, n, me, isTemplate, patch, onChanged, onOpenDoc, onDeleted }: {
   model: Model; n: Node; me: User; isTemplate: boolean;
   patch: (id: number, b: object) => Promise<void>; onChanged: () => void;
   onOpenDoc: (id: number) => void; onDeleted: () => void;

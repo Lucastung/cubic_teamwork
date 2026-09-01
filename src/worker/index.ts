@@ -240,6 +240,16 @@ app.post('/api/nodes', async c => {
   return c.json({ id: r.meta.last_row_id });
 });
 
+app.get('/api/nodes/:id', async c => {
+  const id = Number(c.req.param('id'));
+  const node = await c.env.DB.prepare('SELECT * FROM nodes WHERE id = ?').bind(id).first<any>();
+  if (!node) return c.json({ error: '找不到節點' }, 404);
+  if (!(await canAccessProject(c, node.project_id))) return c.json({ error: '權限不足' }, 403);
+  const project = await c.env.DB.prepare('SELECT id, name, kind, status FROM projects WHERE id = ?')
+    .bind(node.project_id).first();
+  return c.json({ node, project });
+});
+
 app.patch('/api/nodes/:id', async c => {
   const id = Number(c.req.param('id'));
   const node = await c.env.DB.prepare('SELECT * FROM nodes WHERE id = ?').bind(id).first<any>();

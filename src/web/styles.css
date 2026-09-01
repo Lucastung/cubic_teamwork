@@ -429,3 +429,13 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 .cmt-input input{flex:1;font-size:13px;padding:6px 12px}
 .modal-docs{margin-bottom:4px}
 .doc-preview{max-height:50vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+
+/* ═══ 任務獨立頁與開啟圖示 ═══ */
+.taskpage{max-width:760px}
+.taskpage .panel-card{padding:20px 24px}
+.open-link{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:7px;color:var(--muted);
+  border:1px solid var(--line);flex:none;
+}
+.open-link:hover{color:var(--accent);border-color:var(--accent)}

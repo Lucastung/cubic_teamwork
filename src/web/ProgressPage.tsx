@@ -122,7 +122,12 @@ export function TaskDetailModal({ model, t, pname, me, onClose, onChanged }: {
       ) : (
       <div className="modal-card" role="dialog" aria-label={t.title}>
         <div className="eyebrow">{pname.get(t.project_id) ?? ''}{path.length ? '／' + path.join('／') : ''}</div>
-        <h3 style={{ margin: '4px 0 8px' }}>{t.title}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ margin: '4px 0 8px', flex: 1 }}>{t.title}</h3>
+          <a className="open-link" href={`/task/${t.id}`} target="_blank" rel="noopener" title="在新分頁開啟完整編輯">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M6.5 3.5H3.8A1.3 1.3 0 0 0 2.5 4.8v7.4a1.3 1.3 0 0 0 1.3 1.3h7.4a1.3 1.3 0 0 0 1.3-1.3V9.5M9.5 2.5h4v4M13 3 7.5 8.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </a>
+        </div>
         <div className="panel-stats" style={{ marginBottom: 10 }}>
           <span className={`stchip ${['done', 'signed'].includes(s) ? 'st-green' : s === 'doing' ? 'st-amber' : s === 'ready' ? 'st-blue' : 'st-grey'}`}>{model.stateLabel(t)}</span>
           {!!t.needs_sign && <span className="stchip st-amber">需簽核</span>}
