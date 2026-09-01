@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { docsApp } from './docs';
 import { erpApp } from './erp';
+import { dumpAll, validateBackup, restoreAll, runScheduledBackup } from './backup';
 
 export interface Env {
   DB: D1Database;
@@ -430,6 +431,55 @@ app.get('/api/river/:userId?', async c => {
   return c.json(results);
 });
 
+/* ── 系統備份與還原（僅管理員）── */
+const adminOnly = async (c: any, next: any) => {
+  if (c.get('user').role !== 'admin') return c.json({ error: '需要管理員權限' }, 403);
+  await next();
+};
+
+app.get('/api/backup', adminOnly, async c => {
+  const data = await dumpAll(c.env.DB);
+  const date = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  return c.json(data, 200, {
+    'Content-Disposition': `attachment; filename="cubic-backup-${date}.json"`,
+  });
+});
+
+app.get('/api/backups', adminOnly, async c => {
+  const list = await c.env.FILES.list({ prefix: 'backups/' });
+  return c.json(list.objects
+    .sort((a, b) => (a.key > b.key ? -1 : 1))
+    .map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded })));
+});
+
+app.post('/api/restore', adminOnly, async c => {
+  const { password, confirm, backup } = await c.req.json();
+  if (confirm !== 'RESTORE') return c.json({ error: '請輸入確認字樣 RESTORE' }, 400);
+  const me = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(c.get('user').id).first<any>();
+  if (!password || !(await verifyPassword(String(password), me.password_hash)))
+    return c.json({ error: '密碼錯誤' }, 401);
+  const err = validateBackup(backup);
+  if (err) return c.json({ error: err }, 400);
+  const n = await restoreAll(c.env.DB, backup);
+  return c.json({ ok: true, restored_rows: n, note: '還原完成，所有人需重新登入' });
+});
+
+app.post('/api/restore-from', adminOnly, async c => {
+  const { key, password, confirm } = await c.req.json();
+  if (confirm !== 'RESTORE') return c.json({ error: '請輸入確認字樣 RESTORE' }, 400);
+  const me = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(c.get('user').id).first<any>();
+  if (!password || !(await verifyPassword(String(password), me.password_hash)))
+    return c.json({ error: '密碼錯誤' }, 401);
+  if (!key?.startsWith('backups/')) return c.json({ error: '無效的備份' }, 400);
+  const obj = await c.env.FILES.get(key);
+  if (!obj) return c.json({ error: '找不到備份檔' }, 404);
+  const backup = await obj.json();
+  const err = validateBackup(backup);
+  if (err) return c.json({ error: err }, 400);
+  const n = await restoreAll(c.env.DB, backup);
+  return c.json({ ok: true, restored_rows: n, note: '還原完成，所有人需重新登入' });
+});
+
 /* ── 文件中心 ── */
 app.route('/api', docsApp as any);
 
@@ -441,4 +491,10 @@ app.notFound(c =>
   c.req.path.startsWith('/api/') ? c.json({ error: 'Not found' }, 404) : c.env.ASSETS.fetch(c.req.raw)
 );
 
-export default app;
+export default {
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => app.fetch(req, env, ctx),
+  /** 每日自動備份（cron 於 wrangler.jsonc 設定，UTC 18:00 = 台北 02:00） */
+  scheduled: async (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(runScheduledBackup(env.DB, env.FILES));
+  },
+};

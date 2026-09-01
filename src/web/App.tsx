@@ -405,6 +405,106 @@ function MembersPage({ onHome }: { onHome: () => void }) {
           角色權限：管理員可管理成員與所有專案；專案負責人可建立專案；成員參與被加入的專案。
         </p>
       </div>
+      <BackupPanel />
+    </div>
+  );
+}
+
+/* ── 系統備份與還原（管理員）── */
+function BackupPanel() {
+  const [backups, setBackups] = useState<{ key: string; size: number; uploaded: string }[]>([]);
+  const [target, setTarget] = useState<{ kind: 'key'; key: string } | { kind: 'file'; backup: any; name: string } | null>(null);
+  const [pw, setPw] = useState('');
+  const [confirmTxt, setConfirmTxt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const reload = () => api.get<any[]>('/api/backups').then(setBackups).catch(() => {});
+  useEffect(() => { reload(); }, []);
+
+  const downloadBackup = async () => {
+    const res = await fetch('/api/backup');
+    if (!res.ok) { alert('備份失敗'); return; }
+    const blob = await res.blob();
+    const date = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `cubic-backup-${date}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const doRestore = async () => {
+    setErr(''); setBusy(true);
+    try {
+      const body = target!.kind === 'key'
+        ? { key: target!.key, password: pw, confirm: confirmTxt }
+        : { backup: (target as any).backup, password: pw, confirm: confirmTxt };
+      const url = target!.kind === 'key' ? '/api/restore-from' : '/api/restore';
+      const r = await api.post<{ restored_rows: number; note: string }>(url, body);
+      alert(`還原完成（${r.restored_rows} 筆資料）。${r.note}`);
+      window.location.href = '/';
+    } catch (ex: any) { setErr(ex.message); setBusy(false); }
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 18 }}>
+      <div className="side-label" style={{ margin: '0 0 8px' }}>系統備份與還原</div>
+      <p className="muted" style={{ fontSize: 12.5, margin: '0 0 10px' }}>
+        備份包含全部資料庫資料（成員、專案、任務、文件、單據、簽核記錄…）。附件圖片存於雲端儲存、不隨備份檔打包，還原到本系統時附件不受影響。系統每天凌晨兩點自動備份、保留最近 30 份。
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button className="btn primary" onClick={downloadBackup}>下載完整備份</button>
+        <label className="btn" style={{ cursor: 'pointer' }}>
+          從檔案還原…
+          <input type="file" accept=".json,application/json" style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                try { setTarget({ kind: 'file', backup: JSON.parse(String(reader.result)), name: f.name }); setPw(''); setConfirmTxt(''); }
+                catch { alert('不是有效的 JSON 備份檔'); }
+              };
+              reader.readAsText(f);
+              e.target.value = '';
+            }} />
+        </label>
+      </div>
+      {backups.length > 0 && (
+        <>
+          <div className="side-label" style={{ margin: '4px 0 4px' }}>自動備份</div>
+          {backups.map(b => (
+            <div key={b.key} className="member-row">
+              <span className="mono" style={{ fontSize: 13 }}>{b.key.replace('backups/', '')}</span>
+              <span className="muted">{(b.size / 1024).toFixed(0)} KB</span>
+              <button className="btn subtle" style={{ marginLeft: 'auto' }}
+                onClick={() => { setTarget({ kind: 'key', key: b.key }); setPw(''); setConfirmTxt(''); }}>還原到這個時間點</button>
+            </div>
+          ))}
+        </>
+      )}
+      {target && (
+        <>
+          <div className="scrim show" onClick={() => !busy && setTarget(null)} />
+          <div className="modal-card" role="dialog" aria-label="還原確認">
+            <h3 style={{ margin: '0 0 6px', color: 'var(--danger)' }}>⚠ 還原系統資料</h3>
+            <p style={{ fontSize: 13.5, margin: '0 0 10px' }}>
+              即將以{target.kind === 'key' ? `自動備份「${target.key.replace('backups/', '')}」` : `檔案「${(target as any).name}」`}
+              <b>覆蓋目前系統的全部資料</b>。這個動作不可復原，還原後所有人（包括你）需要重新登入。
+            </p>
+            <div className="sign-box">
+              <input type="password" placeholder="你的登入密碼" value={pw} onChange={e => setPw(e.target.value)} autoFocus />
+              <input placeholder="輸入 RESTORE 以確認" value={confirmTxt} onChange={e => setConfirmTxt(e.target.value)} />
+            </div>
+            {err && <div className="err" style={{ marginTop: 6 }}>{err}</div>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+              <button className="btn" disabled={busy} onClick={() => setTarget(null)}>取消</button>
+              <button className="btn primary" disabled={busy || !pw || confirmTxt !== 'RESTORE'} onClick={doRestore}>
+                {busy ? '還原中…' : '確認還原'}</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
