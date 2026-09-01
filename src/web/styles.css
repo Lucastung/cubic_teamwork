@@ -464,3 +464,7 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
   flex:none;font-size:11px;font-weight:500;color:var(--muted);
   border:1px solid var(--line);border-radius:5px;padding:1px 7px;letter-spacing:.02em;
 }
+
+/* ═══ 圖片尺寸 ═══ */
+.tb-label{font-size:11px;color:var(--muted);align-self:center;padding:0 4px;white-space:nowrap}
+.tiptap img.ProseMirror-selectednode{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}

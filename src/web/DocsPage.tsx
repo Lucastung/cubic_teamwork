@@ -2,6 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
+
+/** 圖片加寬度屬性（以 % 儲存），供編輯器調整與匯出沿用 */
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.style.width || el.getAttribute('width') || null,
+        renderHTML: (attrs: Record<string, any>) => (attrs.width ? { style: `width:${attrs.width}` } : {}),
+      },
+    };
+  },
+});
 import Placeholder from '@tiptap/extension-placeholder';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
@@ -309,6 +323,7 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
   const [doc, setDoc] = useState<any>(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [panel, setPanel] = useState<'none' | 'versions' | 'perms'>('none');
+  const [, forceSel] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const titleTimer = useRef<ReturnType<typeof setTimeout>>();
   const canEdit = doc && (doc.my_level === 'edit' || doc.my_level === 'manage');
@@ -316,12 +331,13 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image.configure({ inline: false }),
+      ResizableImage.configure({ inline: false }),
       Placeholder.configure({ placeholder: '開始輸入內容…（支援 Markdown 快捷鍵，例如 # 標題、- 清單）' }),
       Table.configure({ resizable: false }), TableRow, TableCell, TableHeader,
       TaskList, TaskItem.configure({ nested: true }),
     ],
     editable: false,
+    onSelectionUpdate: () => forceSel(x => x + 1),
     onUpdate: ({ editor }) => {
       setSaved('saving');
       clearTimeout(saveTimer.current);
@@ -524,6 +540,17 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
           <B label="圖" title="插入圖片" act={uploadImage} />
           <B label="&lt;/&gt;" title="程式碼區塊" active={editor.isActive('codeBlock')} act={() => editor.chain().focus().toggleCodeBlock().run()} />
           <B label="❝" title="引用" active={editor.isActive('blockquote')} act={() => editor.chain().focus().toggleBlockquote().run()} />
+          {editor.isActive('image') && (
+            <>
+              <span className="tsep" />
+              <span className="tb-label">圖片寬度</span>
+              {(['25%', '50%', '75%', null] as const).map(w => (
+                <B key={w ?? 'full'} label={w ?? '100%'} title={w ? `縮至 ${w}` : '原始寬度'}
+                  active={editor.getAttributes('image').width === w}
+                  act={() => editor.chain().focus().updateAttributes('image', { width: w }).run()} />
+              ))}
+            </>
+          )}
         </div>
       )}
 
