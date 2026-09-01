@@ -4,6 +4,7 @@ import { ProjectView } from './ProjectView';
 import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
 import { FinPage, ES } from './FinPage';
+import { HRPage } from './HRPage';
 import { ProgressPage, TaskDetailModal } from './ProgressPage';
 import { TaskPage } from './TaskPage';
 import { Model, STATE_LABEL, fdate, todayStr } from './model';
@@ -88,7 +89,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'finance';
+type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'finance' | 'hr';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -100,6 +101,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} />;
   if (page === 'progress') return <ProgressPage me={user} onHome={() => setPage('home')} />;
   if (page === 'finance') return <FinPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'hr') return <HRPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -142,6 +144,12 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <h1>您好，{user.name}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {(() => {
+            const meRow: any = users.find(x => x.id === user.id);
+            return meRow?.avatar_key
+              ? <img src={`/api/files/${meRow.avatar_key}`} alt="" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }} onClick={() => onOpen('hr')} title="人事管理" />
+              : <span className="av" style={{ background: user.color, width: 30, height: 30, fontSize: 13, cursor: 'pointer' }} onClick={() => onOpen('hr')} title="人事管理">{user.name[0]}</span>;
+          })()}
           <span className="muted">{ROLE_LABEL[user.role]}</span>
           <button className="btn" onClick={onLogout}>登出</button>
         </div>
@@ -249,13 +257,25 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
               <svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M3.2 19c.9-3 3.2-4.5 5.8-4.5s4.9 1.5 5.8 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="17" cy="9.5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M16.2 14.6c2.3.1 4 1.4 4.7 3.9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
             </span>
             <span className="tbody">
-              <b>人員管理</b>
-              <span className="tdesc">成員帳號、角色與權限</span>
+              <b>系統管理</b>
+              <span className="tdesc">成員帳號與角色、專長標籤池、系統備份還原</span>
               <span className="tmeta">{userCount == null ? '…' : `${userCount} 位成員`}</span>
             </span>
             <span className="tarrow">→</span>
           </button>
         )}
+
+        <button className="tile" onClick={() => onOpen('hr')}>
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M5 20c1-3.6 3.8-5.4 7-5.4s6 1.8 7 5.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>人事管理</b>
+            <span className="tdesc">個人資料與頭像、更換密碼、專長、差勤請假</span>
+            <span className="tmeta">請假送出後由主管核准</span>
+          </span>
+          <span className="tarrow">→</span>
+        </button>
 
         <button className="tile" onClick={() => onOpen('progress')}>
           <span className="ticon" aria-hidden="true">
@@ -373,14 +393,35 @@ function ProjectsPage({ user, onHome }: { user: User; onHome: () => void }) {
   );
 }
 
-/* ── 人員管理模組 ── */
+/* ── 系統管理模組（僅管理員）── */
 const COLORS = ['#C25E82', '#3E7CB8', '#4E9468', '#A5762F', '#7A5EA8', '#3B8B8F'];
 
 function MembersPage({ onHome }: { onHome: () => void }) {
   const [users, setUsers] = useState<User[]>([]);
   const [err, setErr] = useState('');
-  const reload = () => api.get<User[]>('/api/users').then(setUsers);
+  const [tags, setTags] = useState<any[]>([]);
+  const [userSkills, setUserSkills] = useState<{ user_id: number; tag_id: number; name: string }[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const reload = () => {
+    api.get<User[]>('/api/users').then(setUsers);
+    api.get<any[]>('/api/skill-tags').then(setTags).catch(() => {});
+    api.get<any[]>('/api/user-skills').then(setUserSkills).catch(() => {});
+  };
   useEffect(() => { reload(); }, []);
+
+  const skillsOf = (uid: number) => userSkills.filter(s => s.user_id === uid).map(s => s.tag_id);
+  const toggleSkill = async (uid: number, tagId: number) => {
+    const cur = skillsOf(uid);
+    const next = cur.includes(tagId) ? cur.filter(t => t !== tagId) : [...cur, tagId];
+    await api.put(`/api/users/${uid}/skills`, { tag_ids: next });
+    reload();
+  };
+  const addTag = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!newTag.trim()) return;
+    try { await api.post('/api/skill-tags', { name: newTag }); setNewTag(''); reload(); }
+    catch (ex: any) { setErr(ex.message); }
+  };
 
   const add = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -406,20 +447,38 @@ function MembersPage({ onHome }: { onHome: () => void }) {
       <header className="home-head">
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button className="btn" onClick={onHome}>← 首頁</button>
-          <div><div className="eyebrow">功能模組</div><h1>人員管理</h1></div>
+          <div><div className="eyebrow">功能模組</div><h1>系統管理</h1></div>
         </div>
       </header>
-      <div className="card">
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="side-label">成員與角色（點專長標籤可指派／移除）</div>
         {users.map(u => (
-          <div key={u.id} className="member-row">
-            <span className="av" style={{ background: u.color, width: 26, height: 26, fontSize: 12 }}>{u.name[0]}</span>
-            <b>{u.name}</b>
-            <span className="muted">{u.email}</span>
-            <select value={u.role} onChange={e => changeRole(u, e.target.value)} style={{ width: 130, marginLeft: 'auto' }} aria-label={`${u.name} 的角色`}>
-              <option value="member">成員</option>
-              <option value="pm">專案負責人</option>
-              <option value="admin">管理員</option>
-            </select>
+          <div key={u.id} style={{ borderBottom: '1px solid var(--line)', padding: '6px 0' }}>
+            <div className="member-row" style={{ border: 'none', padding: '2px 0' }}>
+              {(u as any).avatar_key
+                ? <img src={`/api/files/${(u as any).avatar_key}`} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+                : <span className="av" style={{ background: u.color, width: 26, height: 26, fontSize: 12 }}>{u.name[0]}</span>}
+              <b>{u.name}</b>
+              <span className="muted">{u.email}</span>
+              <select value={u.role} onChange={e => changeRole(u, e.target.value)} style={{ width: 130, marginLeft: 'auto' }} aria-label={`${u.name} 的角色`}>
+                <option value="member">成員</option>
+                <option value="pm">專案負責人</option>
+                <option value="admin">管理員</option>
+              </select>
+            </div>
+            {tags.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '2px 0 4px 34px' }}>
+                {tags.map(t => {
+                  const on = skillsOf(u.id).includes(t.id);
+                  return (
+                    <button key={t.id} className={`stchip ${on ? 'st-blue' : 'st-grey'}`}
+                      style={{ cursor: 'pointer', border: 'none', opacity: on ? 1 : 0.55 }}
+                      title={on ? '點擊移除這個專長' : '點擊指派這個專長'}
+                      onClick={() => toggleSkill(u.id, t.id)}>{t.name}</button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
         <form onSubmit={add} className="member-add">
@@ -437,6 +496,25 @@ function MembersPage({ onHome }: { onHome: () => void }) {
         <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
           角色權限：管理員可管理成員與所有專案；專案負責人可建立專案；成員參與被加入的專案。
         </p>
+      </div>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="side-label">專長標籤池（供上方指派，也是未來任務配發的參考）</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '4px 0' }}>
+          {tags.map(t => (
+            <span key={t.id} className="stchip st-blue" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              {t.name}<span className="muted" style={{ fontSize: 11 }}>{t.user_count}</span>
+              <button className="btn subtle" style={{ padding: '0 4px', minWidth: 0, height: 18, lineHeight: 1 }}
+                onClick={async () => {
+                  if (confirm(`刪除標籤「${t.name}」？（會從所有成員身上移除）`)) { await api.del(`/api/skill-tags/${t.id}`); reload(); }
+                }}>✕</button>
+            </span>
+          ))}
+          {!tags.length && <span className="muted">還沒有專長標籤，例如：定序分析、報告撰寫、專案管理、客戶溝通…</span>}
+        </div>
+        <form onSubmit={addTag} style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input value={newTag} placeholder="新標籤名稱" onChange={e => setNewTag(e.target.value)} style={{ width: 200 }} />
+          <button className="btn" type="submit">＋ 新增標籤</button>
+        </form>
       </div>
       <BackupPanel />
     </div>

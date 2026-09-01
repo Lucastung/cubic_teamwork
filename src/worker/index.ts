@@ -3,6 +3,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { docsApp } from './docs';
 import { erpApp } from './erp';
 import { finApp } from './fin';
+import { hrApp } from './hr';
 import { dumpAll, validateBackup, restoreAll, runScheduledBackup, zipAllFiles, restoreFilesFromZip } from './backup';
 
 export interface Env {
@@ -92,7 +93,7 @@ app.get('/api/auth/me', c => c.json(c.get('user')));
 
 /* ── users ── */
 app.get('/api/users', async c => {
-  const { results } = await c.env.DB.prepare('SELECT id, email, name, color, role FROM users ORDER BY id').all();
+  const { results } = await c.env.DB.prepare('SELECT id, email, name, color, role, avatar_key FROM users ORDER BY id').all();
   return c.json(results);
 });
 
@@ -546,6 +547,9 @@ app.route('/api', erpApp as any);
 
 /* ── 財務：費用報銷 / 請款收款 ── */
 app.route('/api', finApp as any);
+
+/* ── 人事：個人資料 / 專長 / 差勤 ── */
+app.route('/api', hrApp as any);
 
 /* ── SPA fallback ── */
 app.notFound(c =>

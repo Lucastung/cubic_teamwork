@@ -4,7 +4,7 @@ export const BACKUP_MARKER = 'cubic_teamwork_backup';
 
 /** FK 安全順序（父表在前） */
 const TABLES = [
-  'users', 'tpl_classes', 'folders', 'projects', 'project_members',
+  'users', 'skill_tags', 'user_skills', 'leaves', 'tpl_classes', 'folders', 'projects', 'project_members',
   'nodes', 'deps', 'parties', 'party_contacts', 'items',
   'quotes', 'quote_lines', 'orders', 'order_lines',
   'expenses', 'expense_lines', 'expense_receipts',
