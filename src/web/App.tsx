@@ -304,7 +304,7 @@ function HomePage({ user, onOpen, onLogout, can }: { user: User; onOpen: (p: Pag
           <span className="tbody">
             <b>業務管理</b>
             <span className="tdesc">客戶、服務項目、報價單與訂單，成交直接開專案</span>
-            <span className="tmeta">ERP 第一階段</span>
+            <span className="tmeta">成交自動套用交付模版</span>
           </span>
           <span className="tarrow">→</span>
         </button>)}
