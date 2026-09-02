@@ -1,25 +1,25 @@
 :root{
-  --ground:#F3F4F1; --surface:#FFFFFF; --surface-2:#ECEEE9;
-  --ink:#20261F; --muted:#67706A; --line:#DEE2D9;
-  --accent:#2456A6; --accent-2:#3D74C9; --accent-soft:#E7EDF8;
-  --ok:#2E8757; --ok-soft:#E3F1E9;
-  --warn:#B97817; --warn-soft:#F7EEDC;
-  --danger:#B3403A; --danger-soft:#F6E4E2;
-  --locked:#8A928E; --locked-soft:#EDEFEC;
-  --shadow:0 1px 2px rgba(30,36,30,.05),0 6px 20px rgba(30,36,30,.06);
-  --shadow-lift:0 2px 4px rgba(30,36,30,.07),0 12px 28px rgba(30,36,30,.11);
+  /* 品牌色盤：藍 #049DD9、珊瑚 #F27166、綠 #76A62E、橘 #F2913D、黃 #F2B84B */
+  --ground:#F2F6F8; --surface:#FFFFFF; --surface-2:#E9EFF2;
+  --ink:#1E2A30; --muted:#64737C; --line:#DBE3E8;
+  --accent:#0489BD; --accent-2:#049DD9; --accent-soft:#E1F2FA;
+  --ok:#5F8A22; --ok-soft:#EDF3DD;
+  --warn:#C9721C; --warn-soft:#FCEEDC;
+  --danger:#CE4B3F; --danger-soft:#FCE7E4;
+  --locked:#8A9299; --locked-soft:#ECEFF1;
+  --shadow:0 1px 2px rgba(20,40,52,.05),0 6px 20px rgba(20,40,52,.06);
+  --shadow-lift:0 2px 4px rgba(20,40,52,.07),0 12px 28px rgba(20,40,52,.11);
   --radius:12px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --ground:#161917; --surface:#1F2321; --surface-2:#282D2A;
-    --ink:#E7EAE6; --muted:#9BA49F; --line:#353B37;
-    --accent:#84ABE8; --accent-soft:#26324A;
-    --ok:#5CBA84; --ok-soft:#22352A;
-    --warn:#D9A04B; --warn-soft:#3A3021;
-    --danger:#E08983; --danger-soft:#3C2624;
-    --locked:#78817C; --locked-soft:#2A2F2C;
-    --accent-2:#6E9BDD;
+    --ground:#121A1F; --surface:#1B242B; --surface-2:#243038;
+    --ink:#E4EBEF; --muted:#93A3AD; --line:#334049;
+    --accent:#4AC0EC; --accent-2:#2FAADB; --accent-soft:#12384A;
+    --ok:#A3C662; --ok-soft:#28331A;
+    --warn:#EDA34D; --warn-soft:#3B2E1A;
+    --danger:#F08D82; --danger-soft:#3D2522;
+    --locked:#7C878E; --locked-soft:#2A343B;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.35);
     --shadow-lift:0 2px 4px rgba(0,0,0,.45),0 12px 28px rgba(0,0,0,.4);
   }
@@ -46,7 +46,7 @@ button{font-family:inherit;cursor:pointer}
 .btn.primary{
   background:linear-gradient(180deg,var(--accent-2),var(--accent));
   border-color:var(--accent);color:#fff;
-  box-shadow:0 1px 2px rgba(36,86,166,.3);
+  box-shadow:0 1px 2px rgba(4,157,217,.35);
 }
 .btn.primary:hover{filter:brightness(1.07)}
 input,select{
@@ -67,13 +67,7 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 }
 .auth-card{width:370px;display:flex;flex-direction:column;gap:12px;padding:30px 28px}
 .auth-card h1{text-align:center;margin-bottom:6px}
-.brand-mark{
-  width:52px;height:52px;border-radius:14px;margin:0 auto 4px;
-  background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
-  display:flex;align-items:center;justify-content:center;
-  box-shadow:0 6px 16px rgba(36,86,166,.32);
-}
-.brand-mark svg{width:30px;height:30px}
+.brand-logo{width:64px;height:64px;margin:0 auto 4px;display:block}
 .err{color:var(--danger);font-size:13px}
 .muted{color:var(--muted);font-size:13px}
 
@@ -200,24 +194,24 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
   transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;
 }
 .tile:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-lift)}
-/* 各模組磚專屬色 */
-.tile.t-proj .ticon{background:#E7EDF8;color:#2456A6}
-.tile.t-sys  .ticon{background:#EFE7F5;color:#7A4E9E}
-.tile.t-hr   .ticon{background:#E4F1EA;color:#2E8757}
-.tile.t-prog .ticon{background:#FDF0DC;color:#B97817}
-.tile.t-docs .ticon{background:#E3F0F4;color:#2B7A8C}
-.tile.t-sales .ticon{background:#F7E8E2;color:#B65C33}
-.tile.t-inv  .ticon{background:#EDF3E1;color:#5F7F2A}
-.tile.t-fin  .ticon{background:#F6E4E8;color:#A8455E}
+/* 各模組磚專屬色（品牌五色盤衍生） */
+.tile.t-proj .ticon{background:#E1F2FA;color:#0489BD}   /* 品牌藍 */
+.tile.t-sys  .ticon{background:#E7EDF1;color:#55707E}   /* 石板 */
+.tile.t-hr   .ticon{background:#DFF0F4;color:#0E7E9C}   /* 青 */
+.tile.t-prog .ticon{background:#FCEEDC;color:#C9721C}   /* 橘 #F2913D */
+.tile.t-docs .ticon{background:#FBF1DB;color:#B78A1F}   /* 黃 #F2B84B */
+.tile.t-sales .ticon{background:#FCE7E4;color:#CE4B3F}  /* 珊瑚 #F27166 */
+.tile.t-inv  .ticon{background:#EDF3DD;color:#5F8A22}   /* 綠 #76A62E */
+.tile.t-fin  .ticon{background:#FCE9D8;color:#C05A1E}   /* 深橘 */
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]) .tile.t-proj .ticon{background:#26324A;color:#84ABE8}
-  :root:not([data-theme="light"]) .tile.t-sys  .ticon{background:#342A42;color:#BB92DD}
-  :root:not([data-theme="light"]) .tile.t-hr   .ticon{background:#22352A;color:#5CBA84}
-  :root:not([data-theme="light"]) .tile.t-prog .ticon{background:#3A3021;color:#D9A04B}
-  :root:not([data-theme="light"]) .tile.t-docs .ticon{background:#20343A;color:#6FB6C9}
-  :root:not([data-theme="light"]) .tile.t-sales .ticon{background:#3B2A22;color:#DD9A73}
-  :root:not([data-theme="light"]) .tile.t-inv  .ticon{background:#2C3320;color:#A4C25E}
-  :root:not([data-theme="light"]) .tile.t-fin  .ticon{background:#3A2429;color:#DD8AA0}
+  :root:not([data-theme="light"]) .tile.t-proj .ticon{background:#12384A;color:#4AC0EC}
+  :root:not([data-theme="light"]) .tile.t-sys  .ticon{background:#28343C;color:#9DB4C0}
+  :root:not([data-theme="light"]) .tile.t-hr   .ticon{background:#173741;color:#5FBCD3}
+  :root:not([data-theme="light"]) .tile.t-prog .ticon{background:#3B2E1A;color:#EDA34D}
+  :root:not([data-theme="light"]) .tile.t-docs .ticon{background:#39311A;color:#E5BE5E}
+  :root:not([data-theme="light"]) .tile.t-sales .ticon{background:#3D2522;color:#F08D82}
+  :root:not([data-theme="light"]) .tile.t-inv  .ticon{background:#28331A;color:#A3C662}
+  :root:not([data-theme="light"]) .tile.t-fin  .ticon{background:#3B2814;color:#E89555}
 }
 .tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tile.disabled{cursor:default;opacity:.62}
@@ -411,6 +405,26 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 }
 .banner-date{font-size:12px;color:var(--muted);letter-spacing:.08em;margin-bottom:5px;font-weight:500}
 .banner-line{font-size:17px;line-height:1.65;position:relative}
+/* 個人儀表板 Banner */
+.banner.dash{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:20px 26px}
+.dash-id{display:flex;align-items:center;gap:16px;min-width:260px;flex:1;position:relative}
+.dash-av{width:64px;height:64px;border-radius:50%;object-fit:cover;flex:none;border:3px solid var(--surface);box-shadow:var(--shadow)}
+span.dash-av{display:inline-flex}
+.dash-name{font-size:20px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap}
+.dash-skills{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.skill-badge{
+  font-size:11.5px;font-weight:500;padding:2px 10px;border-radius:99px;
+  background:var(--surface);border:1px solid var(--accent);color:var(--accent);
+}
+.dash-stats{display:flex;gap:4px;flex-wrap:wrap;position:relative}
+.dstat{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  min-width:76px;padding:10px 12px;border-radius:10px;
+}
+.dstat:hover{background:var(--surface)}
+.dstat b{font-size:24px;line-height:1.1;font-weight:500}
+.dstat span{font-size:11.5px;color:var(--muted);letter-spacing:.04em}
+@media (max-width:700px){.banner.dash{gap:14px}.dash-stats{width:100%;justify-content:space-between}}
 .banner-line b{color:var(--accent)}
 .banner-over{color:var(--danger)}
 .mytasks{margin-bottom:18px;padding:14px 18px}

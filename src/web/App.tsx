@@ -78,9 +78,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   return (
     <div className="auth-wrap">
       <form className="card auth-card" onSubmit={submit}>
-        <div className="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
-        </div>
+        <img src="/logo.png" alt="Cubic Teamwork" className="brand-logo" />
         <div style={{ textAlign: 'center' }}><div className="eyebrow">Cubic Teamwork</div><h1>登入</h1></div>
         <input name="email" type="email" placeholder="Email" required />
         <input name="password" type="password" placeholder="密碼" required />
@@ -118,9 +116,11 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
   const [prog, setProg] = useState<{ projects: { id: number; name: string }[]; nodes: Node[]; deps: Dep[] } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [openTask, setOpenTask] = useState<number | null>(null);
+  const [profile, setProfile] = useState<any>(null);
   const load = () => {
     api.get<any>('/api/progress').then(d => { setProg(d); setProjCount(d.projects.length); }).catch(() => {});
     api.get<User[]>('/api/users').then(u => { setUsers(u); setUserCount(u.length); }).catch(() => {});
+    api.get<any>('/api/me/profile').then(setProfile).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
@@ -142,9 +142,12 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
   return (
     <div className="app">
       <header className="home-head">
-        <div>
-          <div className="eyebrow">Cubic Teamwork</div>
-          <h1>您好，{user.name}</h1>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <img src="/logo.png" alt="" style={{ width: 44, height: 44 }} />
+          <div>
+            <div className="eyebrow">Cubic Teamwork</div>
+            <h1>您好，{user.name}</h1>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {(() => {
@@ -158,16 +161,42 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         </div>
       </header>
 
-      <div className="banner">
-        <div className="banner-main">
-          <div className="banner-date mono">{new Date().toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' })}</div>
-          <div className="banner-line">
-            {myTasks.length === 0 && toSign.length === 0
-              ? '今天河流裡沒有待辦任務，輕鬆的一天。'
-              : <>你的河流裡有 <b>{myTasks.length}</b> 項待完成{readyN > 0 && <>，其中 <b>{readyN}</b> 項現在可以開始</>}{overN > 0 && <>，<b className="banner-over">{overN} 項已逾期</b></>}{toSign.length > 0 && <>，<b>{toSign.length}</b> 項等你簽核</>}。</>}
+      {(() => {
+        // 近 30 天個人績效（以進行中專案的任務計）
+        const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const myDone30 = model
+          ? model.allTasks().filter(t => t.owner_id === user.id && t.done_at && t.done_at.slice(0, 10) >= cutoff)
+          : [];
+        const withDue = myDone30.filter(t => t.due);
+        const onTime = withDue.filter(t => t.done_at!.slice(0, 10) <= t.due!);
+        const onTimeRate = withDue.length ? Math.round((onTime.length / withDue.length) * 100) : null;
+        return (
+          <div className="banner dash">
+            <div className="dash-id">
+              {profile?.avatar_key
+                ? <img className="dash-av" src={`/api/files/${profile.avatar_key}`} alt="" />
+                : <span className="av dash-av" style={{ background: user.color, fontSize: 26 }}>{user.name[0]}</span>}
+              <div style={{ minWidth: 0 }}>
+                <div className="banner-date mono">{new Date().toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' })}</div>
+                <div className="dash-name">{user.name}<span className="stchip st-blue" style={{ marginLeft: 8 }}>{ROLE_LABEL[user.role]}</span></div>
+                <div className="dash-skills">
+                  {(profile?.skills ?? []).map((s: any) => <span key={s.id} className="skill-badge">{s.name}</span>)}
+                  {profile && !profile.skills?.length && <span className="muted" style={{ fontSize: 12 }}>尚未設定專長</span>}
+                </div>
+              </div>
+            </div>
+            <div className="dash-stats">
+              <div className="dstat"><b className="mono">{myTasks.length}</b><span>待完成</span></div>
+              <div className="dstat"><b className="mono" style={{ color: 'var(--accent)' }}>{readyN}</b><span>可開始</span></div>
+              <div className="dstat"><b className="mono" style={overN > 0 ? { color: 'var(--danger)' } : {}}>{overN}</b><span>已逾期</span></div>
+              <div className="dstat"><b className="mono" style={{ color: 'var(--ok)' }}>{myDone30.length}</b><span>30 天完成</span></div>
+              <div className="dstat" title="近 30 天有交期的任務中，在期限內完成的比例">
+                <b className="mono" style={{ color: 'var(--ok)' }}>{onTimeRate == null ? '—' : `${onTimeRate}%`}</b><span>準時率</span></div>
+              {toSign.length > 0 && <div className="dstat"><b className="mono" style={{ color: 'var(--warn)' }}>{toSign.length}</b><span>待簽核</span></div>}
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {shown.length > 0 && (
         <div className="mytasks card">
