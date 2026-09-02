@@ -222,16 +222,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
           <button className={view === 'index' ? 'on' : ''} onClick={() => setView('index')}>模版引索</button>
         </nav>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {view === 'docs' ? (
-            <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
-          ) : (
-            <>
-              <button className="btn" onClick={exportTree}>匯出</button>
-              <button className="btn" onClick={() => setShowImport(true)}>匯入</button>
-              <button className="btn" onClick={() => newClass(null)}>＋ 根節點</button>
-              <button className="btn" onClick={() => newTemplate(null)}>＋ 未分類模版</button>
-            </>
-          )}
+          {view === 'docs' && <button className="btn primary" onClick={newDoc}>＋ 新文件</button>}
         </div>
       </header>
       <div className="docs-layout">
@@ -265,6 +256,12 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
           ) : (
             <>
               <div className="side-label">模版引索樹（點 ▸ 展開）</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '2px 10px 8px' }}>
+                <button className="btn" onClick={() => newClass(null)}>＋ 根節點</button>
+                <button className="btn" onClick={() => newTemplate(null)}>＋ 未分類模版</button>
+                <button className="btn subtle" onClick={exportTree}>匯出</button>
+                <button className="btn subtle" onClick={() => setShowImport(true)}>匯入</button>
+              </div>
               {renderClasses(null, 0)}
               {classes.length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有引索節點——按「＋ 根節點」建第一層（例如部門），再往下建類型。</p>}
               {templates.filter(d => !d.class_id).length > 0 && <div className="side-label">未分類模版</div>}
