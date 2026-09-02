@@ -460,6 +460,11 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
   background:var(--accent-soft);border-radius:5px;padding:1px 6px;
 }
 .cls-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fold-row{display:flex;align-items:center;gap:2px}
+.fold-acts{display:none;gap:2px;flex:none;padding-right:4px}
+.fold-row:hover .fold-acts{display:inline-flex}
+.fold-acts button{border:none;background:none;color:var(--muted);font-size:11px;cursor:pointer;padding:2px 5px;border-radius:4px}
+.fold-acts button:hover{background:var(--surface);color:var(--accent)}
 .cls-acts{margin-left:auto;display:none;gap:2px}
 .cls-row:hover .cls-acts{display:inline-flex}
 .cls-acts button{border:none;background:none;color:var(--muted);font-size:10.5px;cursor:pointer;padding:2px 4px;border-radius:4px;white-space:nowrap}

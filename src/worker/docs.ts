@@ -223,9 +223,13 @@ docsApp.delete('/folders/:id', async c => {
   const f = acl.folders.find(x => x.id === id);
   if (!f) return c.json({ error: '找不到資料夾' }, 404);
   if (RANK[acl.folderLevelFor(c.get('user'), f)] < RANK.manage) return c.json({ error: '權限不足' }, 403);
-  const n = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM docs WHERE folder_id = ?').bind(id).first<{ n: number }>();
-  if ((n?.n ?? 0) > 0) return c.json({ error: '資料夾內還有文件，請先移出或刪除' }, 400);
-  await c.env.DB.prepare('DELETE FROM folders WHERE id = ?').bind(id).run();
+  // 內容不會消失：文件與子資料夾自動移到上一層（最外層則變未分類）
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE docs SET folder_id = ? WHERE folder_id = ?').bind(f.parent_id ?? null, id),
+    c.env.DB.prepare('UPDATE folders SET parent_id = ? WHERE parent_id = ?').bind(f.parent_id ?? null, id),
+    c.env.DB.prepare(`DELETE FROM doc_perms WHERE target_kind = 'folder' AND target_id = ?`).bind(id),
+    c.env.DB.prepare('DELETE FROM folders WHERE id = ?').bind(id),
+  ]);
   return c.json({ ok: true });
 });
 

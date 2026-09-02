@@ -179,15 +179,35 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
 
   if (!tree) return <div className="app"><p className="muted">載入中…</p></div>;
 
+  const renameFolder = async (f: any) => {
+    const name = prompt('資料夾名稱：', f.name);
+    if (name === null || !name.trim()) return;
+    await api.patch(`/api/folders/${f.id}`, { name: name.trim() });
+    await reload();
+  };
+  const deleteFolder = async (f: any) => {
+    if (!confirm(`刪除資料夾「${f.name}」？\n裡面的文件與子資料夾不會消失，會自動移到上一層。`)) return;
+    try { await api.del(`/api/folders/${f.id}`); if (curFolder === f.id) setCurFolder(f.parent_id ?? null); await reload(); }
+    catch (ex: any) { alert(ex.message); }
+  };
+
   const renderFolder = (parent: number | null, depth: number): JSX.Element[] => {
     const out: JSX.Element[] = [];
     for (const f of tree.folders.filter(x => x.parent_id === parent)) {
       out.push(
-        <button key={`f${f.id}`} className={`side-item folder ${curFolder === f.id ? 'on' : ''}`}
-          style={{ paddingLeft: 12 + depth * 16 }}
-          onClick={() => setCurFolder(curFolder === f.id ? f.parent_id : f.id)}>
-          <span className="fico">▸</span>{f.name}{!!f.restricted && <span className="lockmark">🔒</span>}
-        </button>
+        <div key={`f${f.id}`} className="fold-row">
+          <button className={`side-item folder ${curFolder === f.id ? 'on' : ''}`}
+            style={{ paddingLeft: 12 + depth * 16, flex: 1, minWidth: 0 }}
+            onClick={() => setCurFolder(curFolder === f.id ? f.parent_id : f.id)}>
+            <span className="fico">▸</span>{f.name}{!!f.restricted && <span className="lockmark">🔒</span>}
+          </button>
+          {f.my_level === 'manage' && (
+            <span className="fold-acts">
+              <button title="改名" onClick={() => renameFolder(f)}>✎</button>
+              <button title="刪除資料夾（內容移到上一層）" onClick={() => deleteFolder(f)}>✕</button>
+            </span>
+          )}
+        </div>
       );
       out.push(...renderFolder(f.id, depth + 1));
       for (const d of tree.docs.filter(x => x.folder_id === f.id && !x.is_template)) {
