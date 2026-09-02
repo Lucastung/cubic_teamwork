@@ -240,6 +240,7 @@ docsApp.post('/docs', async c => {
   let content = { json: '{}', html: '', text: '' };
   let finalTitle = title?.trim() || '未命名文件';
   let docNo: string | null = null;
+  let inheritedClass: number | null = null;
   if (template_id) {
     const tpl = await getDoc(c.env.DB, Number(template_id));
     if (!tpl || !tpl.is_template) return c.json({ error: '找不到模版' }, 404);
@@ -247,10 +248,11 @@ docsApp.post('/docs', async c => {
     if (tv) content = { json: tv.content_json, html: tv.content_html, text: tv.content_text };
     if (!title?.trim()) finalTitle = tpl.title;
     docNo = await genDocNo(c.env.DB, tpl.class_id);   // 依模版節點路徑自動編號
+    inheritedClass = tpl.class_id ?? null;             // 文件掛在模版的引索節點下
   }
   const r = await c.env.DB.prepare(
     'INSERT INTO docs (title, folder_id, is_template, class_id, doc_no, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(finalTitle, folder_id, is_template ? 1 : 0, is_template ? class_id : null, docNo, user.id).run();
+  ).bind(finalTitle, folder_id, is_template ? 1 : 0, is_template ? class_id : inheritedClass, docNo, user.id).run();
   const docId = r.meta.last_row_id as number;
   const v = await c.env.DB.prepare(
     `INSERT INTO doc_versions (doc_id, version_no, content_json, content_html, content_text, author_id, note)

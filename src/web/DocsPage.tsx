@@ -50,7 +50,6 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   const [curDoc, setCurDoc] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<DocMeta[] | null>(null);
-  const [curFolder, setCurFolder] = useState<number | null>(null);
   const [view, setView] = useState<'docs' | 'index'>('docs');
   const [expanded, setExpanded] = useState<Set<number> | null>(null);
   const [showImport, setShowImport] = useState(false);
@@ -100,7 +99,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   }, [q]);
 
   const newDoc = async () => {
-    const r = await api.post<{ id: number }>('/api/docs', { folder_id: curFolder });
+    const r = await api.post<{ id: number }>('/api/docs', {});
     await reload();
     setCurDoc(r.id);
   };
@@ -170,58 +169,45 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
     }
     return out;
   };
-  const newFolder = async () => {
-    const name = prompt('資料夾名稱？');
-    if (!name?.trim()) return;
-    await api.post('/api/folders', { name, parent_id: curFolder });
-    await reload();
-  };
-
   if (!tree) return <div className="app"><p className="muted">載入中…</p></div>;
 
-  const renameFolder = async (f: any) => {
-    const name = prompt('資料夾名稱：', f.name);
-    if (name === null || !name.trim()) return;
-    await api.patch(`/api/folders/${f.id}`, { name: name.trim() });
-    await reload();
-  };
-  const deleteFolder = async (f: any) => {
-    if (!confirm(`刪除資料夾「${f.name}」？\n裡面的文件與子資料夾不會消失，會自動移到上一層。`)) return;
-    try { await api.del(`/api/folders/${f.id}`); if (curFolder === f.id) setCurFolder(f.parent_id ?? null); await reload(); }
-    catch (ex: any) { alert(ex.message); }
-  };
-
-  const renderFolder = (parent: number | null, depth: number): JSX.Element[] => {
+  /* 文件檢視：依模版引索樹分類（文件編號的節點），沒編號的放未分類 */
+  const normalDocs = tree.docs.filter(d => !d.is_template);
+  const docsOfClass = (id: number) => normalDocs.filter(d => d.class_id === id);
+  const subtreeHasDocs = (id: number): boolean =>
+    docsOfClass(id).length > 0 || classes.some(x => x.parent_id === id && subtreeHasDocs(x.id));
+  const renderDocClasses = (parent: number | null, depth: number): JSX.Element[] => {
     const out: JSX.Element[] = [];
-    for (const f of tree.folders.filter(x => x.parent_id === parent)) {
+    for (const cls of classes.filter(x => x.parent_id === parent)) {
+      if (!subtreeHasDocs(cls.id)) continue;   // 只顯示底下有文件的節點
+      const open = isOpen(cls.id);
+      const count = docsOfClass(cls.id).length;
       out.push(
-        <div key={`f${f.id}`} className="fold-row">
-          <button className={`side-item folder ${curFolder === f.id ? 'on' : ''}`}
-            style={{ paddingLeft: 12 + depth * 16, flex: 1, minWidth: 0 }}
-            onClick={() => setCurFolder(curFolder === f.id ? f.parent_id : f.id)}>
-            <span className="fico">▸</span>{f.name}{!!f.restricted && <span className="lockmark">🔒</span>}
+        <div key={`dc${cls.id}`} className="cls-row" style={{ paddingLeft: 4 + depth * 16 }}>
+          <button className="chev" onClick={() => toggleOpen(cls.id)} aria-label={open ? '收摺' : '展開'}>
+            {open ? '▾' : '▸'}
           </button>
-          {f.my_level === 'manage' && (
-            <span className="fold-acts">
-              <button title="改名" onClick={() => renameFolder(f)}>✎</button>
-              <button title="刪除資料夾（內容移到上一層）" onClick={() => deleteFolder(f)}>✕</button>
-            </span>
-          )}
+          <span className="cls-code mono">{cls.code}</span>
+          <span className="cls-name">{cls.name}</span>
+          {!open && <span className="muted" style={{ fontSize: 11, flex: 'none' }}>{count ? `${count} 份` : ''}</span>}
         </div>
       );
-      out.push(...renderFolder(f.id, depth + 1));
-      for (const d of tree.docs.filter(x => x.folder_id === f.id && !x.is_template)) {
-        out.push(
-          <button key={`d${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
-            style={{ paddingLeft: 28 + depth * 16 }} onClick={() => setCurDoc(d.id)}>
-            {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
-          </button>
-        );
+      if (open) {
+        for (const d of docsOfClass(cls.id)) {
+          out.push(
+            <button key={`d${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
+              style={{ paddingLeft: 28 + depth * 16 }} onClick={() => setCurDoc(d.id)}>
+              {d.doc_no && <span className="docno mono" style={{ fontSize: 10.5 }}>{d.doc_no}</span>}
+              {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
+            </button>
+          );
+        }
+        out.push(...renderDocClasses(cls.id, depth + 1));
       }
     }
     return out;
   };
-  const rootDocs = tree.docs.filter(d => !d.is_template && (d.folder_id == null || !tree.folders.some(f => f.id === d.folder_id)));
+  const rootDocs = normalDocs.filter(d => !d.class_id || !classes.some(c2 => c2.id === d.class_id));
   const templates = tree.docs.filter(d => d.is_template);
 
   return (
@@ -237,10 +223,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         </nav>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {view === 'docs' ? (
-            <>
-              <button className="btn" onClick={newFolder}>＋ 資料夾</button>
-              <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
-            </>
+            <button className="btn primary" onClick={newDoc}>＋ 新文件</button>
           ) : (
             <>
               <button className="btn" onClick={exportTree}>匯出</button>
@@ -267,8 +250,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
                 </>
               ) : (
                 <>
-                  {curFolder != null && <div className="side-label">新文件會建立在：{tree.folders.find(f => f.id === curFolder)?.name}</div>}
-                  {renderFolder(null, 0)}
+                  {renderDocClasses(null, 0).length > 0 && <div className="side-label">依引索分類（由模版建立的文件）</div>}
+                  {renderDocClasses(null, 0)}
                   {rootDocs.length > 0 && <div className="side-label">未分類</div>}
                   {rootDocs.map(d => (
                     <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
@@ -296,7 +279,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         <main className="docs-main">
           {curDoc == null
             ? <div className="doc-empty muted">選一份文件，或建立新文件</div>
-            : <DocEditor key={curDoc} docId={curDoc} me={me} folders={tree.folders} classes={classes} onMetaChanged={reload}
+            : <DocEditor key={curDoc} docId={curDoc} me={me} classes={classes} onMetaChanged={reload}
                 onDeleted={() => { setCurDoc(null); reload(); }} onOpenDoc={id => { setCurDoc(id); reload(); }} />}
         </main>
         {showImport && (
@@ -336,8 +319,8 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
 }
 
 /* ═══════════ 編輯器（可獨立嵌入 PM）═══════════ */
-export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDeleted, onOpenDoc }: {
-  docId: number; me: User; folders: FolderT[]; classes?: ClsT[]; onMetaChanged: () => void; onDeleted: () => void;
+export function DocEditor({ docId, me, classes, onMetaChanged, onDeleted, onOpenDoc }: {
+  docId: number; me: User; folders?: FolderT[]; classes?: ClsT[]; onMetaChanged: () => void; onDeleted: () => void;
   onOpenDoc?: (id: number) => void;
 }) {
   const [doc, setDoc] = useState<any>(null);
@@ -579,13 +562,6 @@ export function DocEditor({ docId, me, folders, classes, onMetaChanged, onDelete
               <option value="">未掛引索節點</option>
               {classes.map(cl => <option key={cl.id} value={cl.id}>{classPathLabel(classes, cl.id)}｜{cl.name}</option>)}
             </select>
-          )}
-          {!doc.is_template && (
-          <select value={doc.folder_id ?? ''} disabled={!canEdit} aria-label="所在資料夾"
-            onChange={async e => { await api.patch(`/api/docs/${docId}`, { folder_id: e.target.value ? Number(e.target.value) : null }); onMetaChanged(); }}>
-            <option value="">未分類</option>
-            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select>
           )}
           {(me.role === 'admin' || me.role === 'pm' || doc.created_by === me.id) && (
             <>
