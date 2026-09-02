@@ -229,15 +229,27 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
         <aside className="docs-side">
           {view === 'docs' ? (
             <>
-              <input className="doc-search" placeholder="搜尋文件（標題／內文／編號）…" value={q} onChange={e => setQ(e.target.value)} />
-              {hits !== null ? (
+              <input className="doc-search" placeholder="搜尋文件（標題／內文／編號）…" value={q}
+                list="docno-suggest" onChange={e => setQ(e.target.value)} />
+              <datalist id="docno-suggest">
+                {classes.map(cl => {
+                  const p = classPathLabel(classes, cl.id);
+                  return p ? <option key={`c${cl.id}`} value={p}>{cl.name}</option> : null;
+                })}
+                {tree.docs.filter(d => d.doc_no).map(d => (
+                  <option key={`n${d.id}`} value={d.doc_no!}>{d.title}</option>
+                ))}
+              </datalist>
+              {q.trim() ? (
                 <>
-                  <div className="side-label">搜尋結果（{hits.length}）</div>
-                  {hits.map(d => (
+                  <div className="side-label">搜尋結果{hits !== null ? `（${hits.length}）` : ''}</div>
+                  {hits === null && <p className="muted" style={{ padding: '4px 12px' }}>搜尋中…</p>}
+                  {(hits ?? []).map(d => (
                     <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
                       {d.doc_no && <span className="docno mono">{d.doc_no}</span>}{d.title || '未命名文件'}
                     </button>
                   ))}
+                  {hits !== null && hits.length === 0 && <p className="muted" style={{ padding: '4px 12px' }}>沒有符合的內容</p>}
                 </>
               ) : (
                 <>
