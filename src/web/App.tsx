@@ -78,7 +78,10 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   return (
     <div className="auth-wrap">
       <form className="card auth-card" onSubmit={submit}>
-        <div><div className="eyebrow">Cubic Teamwork</div><h1>登入</h1></div>
+        <div className="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+        </div>
+        <div style={{ textAlign: 'center' }}><div className="eyebrow">Cubic Teamwork</div><h1>登入</h1></div>
         <input name="email" type="email" placeholder="Email" required />
         <input name="password" type="password" placeholder="密碼" required />
         {err && <div className="err">{err}</div>}
@@ -200,7 +203,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
       )}
 
       <div className="tile-grid">
-        <button className="tile" onClick={() => onOpen('projects')}>
+        <button className="tile t-proj" onClick={() => onOpen('projects')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="5.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="18.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M10.8 8.2 6.8 14.8M13.2 8.2l4 6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -213,7 +216,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
         </button>
 
         {user.role === 'admin' && (
-          <button className="tile" onClick={() => onOpen('members')}>
+          <button className="tile t-sys" onClick={() => onOpen('members')}>
             <span className="ticon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M3.2 19c.9-3 3.2-4.5 5.8-4.5s4.9 1.5 5.8 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="17" cy="9.5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M16.2 14.6c2.3.1 4 1.4 4.7 3.9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
             </span>
@@ -226,7 +229,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           </button>
         )}
 
-        <button className="tile" onClick={() => onOpen('hr')}>
+        <button className="tile t-hr" onClick={() => onOpen('hr')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M5 20c1-3.6 3.8-5.4 7-5.4s6 1.8 7 5.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -238,7 +241,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <button className="tile" onClick={() => onOpen('progress')}>
+        <button className="tile t-prog" onClick={() => onOpen('progress')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 5.5h9M4 10h13M4 14.5h7M4 19h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><path d="M16 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
@@ -250,7 +253,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <button className="tile" onClick={() => onOpen('docs')}>
+        <button className="tile t-docs" onClick={() => onOpen('docs')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M6 3.5h8L19 8v12.5H6z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M14 3.5V8h5M9 12h7M9 15.5h7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -262,7 +265,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <button className="tile" onClick={() => onOpen('sales')}>
+        <button className="tile t-sales" onClick={() => onOpen('sales')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
           </span>
@@ -274,7 +277,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <button className="tile" onClick={() => onOpen('inventory')}>
+        <button className="tile t-inv" onClick={() => onOpen('inventory')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v8L12 21l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v8M8 6.3l8 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
           </span>
@@ -286,7 +289,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           <span className="tarrow">→</span>
         </button>
 
-        <button className="tile" onClick={() => onOpen('finance')}>
+        <button className="tile t-fin" onClick={() => onOpen('finance')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8 14.5l2.5-3 2.5 2 3-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
