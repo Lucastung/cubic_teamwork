@@ -5,6 +5,7 @@ import { DocsPage } from './DocsPage';
 import { SalesPage } from './SalesPage';
 import { FinPage } from './FinPage';
 import { HomeTodo } from './HomeTodo';
+import { InvPage } from './InvPage';
 import { HRPage } from './HRPage';
 import { ProgressPage, TaskDetailModal } from './ProgressPage';
 import { TaskPage } from './TaskPage';
@@ -90,7 +91,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
 const ROLE_LABEL: Record<string, string> = { admin: '管理員', pm: '專案負責人', member: '成員' };
 
 /* ── 主框架：首頁 → 各功能模組 ── */
-type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'finance' | 'hr';
+type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'finance' | 'hr' | 'inventory';
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
@@ -103,6 +104,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   if (page === 'progress') return <ProgressPage me={user} onHome={() => setPage('home')} />;
   if (page === 'finance') return <FinPage me={user} onHome={() => setPage('home')} />;
   if (page === 'hr') return <HRPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'inventory') return <InvPage me={user} onHome={() => setPage('home')} />;
   return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
 }
 
@@ -268,6 +270,18 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <b>業務管理</b>
             <span className="tdesc">客戶、服務項目、報價單與訂單，成交直接開專案</span>
             <span className="tmeta">ERP 第一階段</span>
+          </span>
+          <span className="tarrow">→</span>
+        </button>
+
+        <button className="tile" onClick={() => onOpen('inventory')}>
+          <span className="ticon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v8L12 21l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v8M8 6.3l8 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+          </span>
+          <span className="tbody">
+            <b>庫存與生產</b>
+            <span className="tdesc">料號主檔、批號效期庫存、BOM 與生產單</span>
+            <span className="tmeta">低庫存與到期自動警示</span>
           </span>
           <span className="tarrow">→</span>
         </button>

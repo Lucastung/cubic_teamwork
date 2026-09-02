@@ -4,6 +4,7 @@ import { docsApp } from './docs';
 import { erpApp } from './erp';
 import { finApp } from './fin';
 import { hrApp } from './hr';
+import { invApp } from './inv';
 import { dumpAll, validateBackup, restoreAll, runScheduledBackup, zipAllFiles, restoreFilesFromZip } from './backup';
 
 export interface Env {
@@ -550,6 +551,9 @@ app.route('/api', finApp as any);
 
 /* ── 人事：個人資料 / 專長 / 差勤 ── */
 app.route('/api', hrApp as any);
+
+/* ── 庫存與生產：料號 / 異動 / BOM / 生產單 ── */
+app.route('/api', invApp as any);
 
 /* ── SPA fallback ── */
 app.notFound(c =>
