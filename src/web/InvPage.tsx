@@ -100,8 +100,8 @@ function MaterialsTab({ me }: { me: User }) {
             <span style={{ width: 90 }} className="mono">{m.mat_no}</span>
             <span style={{ flex: 1, textAlign: 'left' }}><b>{m.name}</b>{m.spec && <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{m.spec}</span>}</span>
             <span style={{ width: 90 }} className="muted">{m.cat_name}</span>
-            <span style={{ width: 110, textAlign: 'right' }} className={`mono ${m.safe_stock > 0 && m.stock < m.safe_stock ? 'banner-over' : ''}`}>
-              {m.stock} {m.unit}</span>
+            <span style={{ width: 110, textAlign: 'right' }} className={`mono ${!m.no_stock && m.safe_stock > 0 && m.stock < m.safe_stock ? 'banner-over' : ''}`}>
+              {m.no_stock ? '不扣庫' : `${m.stock} ${m.unit}`}</span>
             <span style={{ width: 90, textAlign: 'right' }} className="muted mono">{m.safe_stock || '—'}</span>
           </button>
         ))}
@@ -152,9 +152,10 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
         <h2 style={{ margin: 0 }} className="mono">{m.mat_no}</h2>
         <b>{m.name}</b>
         <span className="stchip st-blue">{m.cat_name}</span>
-        {!!m.track_lot && <span className="stchip st-amber">批號管理</span>}
+        {!!m.track_lot && !m.no_stock && <span className="stchip st-amber">批號管理</span>}
+        {!!m.no_stock && <span className="stchip st-grey" title="可放進 BOM 留下使用紀錄，但不領料、不記庫存">不扣庫存</span>}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button className="btn primary" onClick={() => setMv(mv ? null : { dir: 'in', qty: '', reason: 'purchase_in', lot_no: '', expiry: '', note: '' })}>出入庫…</button>
+          {!m.no_stock && <button className="btn primary" onClick={() => setMv(mv ? null : { dir: 'in', qty: '', reason: 'purchase_in', lot_no: '', expiry: '', note: '' })}>出入庫…</button>}
           {canWrite && <button className="btn subtle" onClick={async () => {
             await api.patch(`/api/materials/${id}`, { active: m.active ? 0 : 1 }); reload();
           }}>{m.active ? '停用' : '啟用'}</button>}
@@ -185,7 +186,14 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
       )}
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div className="side-label">基本資料（目前庫存 <b className={`mono ${m.safe_stock > 0 && m.stock < m.safe_stock ? 'banner-over' : ''}`}>{m.stock} {m.unit}</b>）</div>
+        <div className="side-label">基本資料{m.no_stock ? '（不扣庫存）' : <>（目前庫存 <b className={`mono ${m.safe_stock > 0 && m.stock < m.safe_stock ? 'banner-over' : ''}`}>{m.stock} {m.unit}</b>）</>}</div>
+        {canWrite && (
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!m.no_stock}
+              onChange={async e => { await api.patch(`/api/materials/${id}`, { no_stock: e.target.checked ? 1 : 0 }); reload(); }} />
+            不扣庫存（軟體模組等可複製的數位料：可放進 BOM 留紀錄，但不領料、不記庫存、不警示）
+          </label>
+        )}
         <div className="fld-grid">
           <label className="fld"><span>品名</span><input defaultValue={m.name} readOnly={!canWrite} onBlur={patch('name')} /></label>
           <label className="fld"><span>規格</span><input defaultValue={m.spec ?? ''} readOnly={!canWrite} onBlur={patch('spec')} /></label>
@@ -207,7 +215,7 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
         </div>
       </div>
 
-      {!!m.track_lot && (
+      {!!m.track_lot && !m.no_stock && (
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="side-label">批號結存（出庫依效期先進先出）</div>
           {m.lots.map((l: any) => {
@@ -412,7 +420,8 @@ function WoDetail({ id, canWrite, onBack }: { id: number; canWrite: boolean; onB
             <span style={{ width: 90 }} className="mono">{r.mat_no}</span>
             <span style={{ flex: 1 }}>{r.name}</span>
             <span style={{ width: 100, textAlign: 'right' }} className="mono">{r.need} {r.unit}</span>
-            <span style={{ width: 100, textAlign: 'right' }} className={`mono ${r.enough ? '' : 'banner-over'}`}>{r.stock} {r.unit}</span>
+            <span style={{ width: 100, textAlign: 'right' }} className={`mono ${r.enough ? '' : 'banner-over'}`}>
+              {r.no_stock ? '不扣庫' : `${r.stock} ${r.unit}`}</span>
           </div>
         ))}
       </div>

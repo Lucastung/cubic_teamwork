@@ -75,7 +75,7 @@ invApp.patch('/materials/:id', mgrWriteGuard, async c => {
   const id = Number(c.req.param('id'));
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['name', 'spec', 'unit', 'safe_stock', 'cost', 'supplier_id', 'location', 'track_lot', 'active', 'note', 'template_project_id'] as const) {
+  for (const k of ['name', 'spec', 'unit', 'safe_stock', 'cost', 'supplier_id', 'location', 'track_lot', 'active', 'note', 'template_project_id', 'no_stock'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k] === '' ? null : body[k]); }
   }
   if (!sets.length) return c.json({ ok: true });
@@ -124,6 +124,7 @@ invApp.post('/materials/:id/moves', async c => {
   const id = Number(c.req.param('id'));
   const m = await c.env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(id).first<any>();
   if (!m) return c.json({ error: '找不到料號' }, 404);
+  if (m.no_stock) return c.json({ error: '這個料號設定為「不扣庫存」，不需要登記出入庫' }, 400);
   const { qty, reason = 'adjust', lot_no, expiry, note } = await c.req.json();
   const q = Number(qty);
   if (!q || !isFinite(q)) return c.json({ error: '請填數量（入庫為正、出庫為負）' }, 400);
@@ -213,10 +214,13 @@ invApp.post('/work-orders', async c => {
 /** 需求 vs 庫存對照 */
 async function woRequirements(db: D1Database, wo: any) {
   const bom = (await db.prepare(
-    `SELECT b.component_id, b.qty, m.mat_no, m.name, m.unit, m.track_lot,
+    `SELECT b.component_id, b.qty, m.mat_no, m.name, m.unit, m.track_lot, m.no_stock,
        COALESCE((SELECT SUM(qty) FROM stock_moves sm WHERE sm.material_id = b.component_id), 0) AS stock
      FROM boms b JOIN materials m ON m.id = b.component_id WHERE b.product_id = ?`).bind(wo.product_id).all()).results as any[];
-  return bom.map(b => ({ ...b, need: b.qty * wo.qty, enough: b.stock + 0.000001 >= b.qty * wo.qty }));
+  return bom.map(b => ({
+    ...b, need: b.qty * wo.qty,
+    enough: !!b.no_stock || b.stock + 0.000001 >= b.qty * wo.qty,   // 不扣庫存的料永遠不算不足
+  }));
 }
 
 invApp.get('/work-orders/:id', async c => {
@@ -259,6 +263,7 @@ invApp.post('/work-orders/:id/action', async c => {
       return c.json({ error: `庫存不足：${short.map(s => `${s.name} 需 ${s.need}、現有 ${s.stock}`).join('；')}` }, 400);
     const stmts: D1PreparedStatement[] = [];
     for (const r of reqs) {
+      if (r.no_stock) continue;   // 不扣庫存：BOM 上留紀錄，領料跳過
       let remain = r.need;
       if (r.track_lot) {
         const lots = await lotBalances(db, r.component_id);
@@ -340,7 +345,7 @@ invApp.get('/stock-alerts', async c => {
     `SELECT * FROM (
        SELECT m.id, m.mat_no, m.name, m.unit, m.safe_stock,
          COALESCE((SELECT SUM(qty) FROM stock_moves sm WHERE sm.material_id = m.id), 0) AS stock
-       FROM materials m WHERE m.active = 1 AND m.safe_stock > 0
+       FROM materials m WHERE m.active = 1 AND m.no_stock = 0 AND m.safe_stock > 0
      ) WHERE stock < safe_stock ORDER BY stock / safe_stock`).all()).results;
   const expiring = (await c.env.DB.prepare(
     `SELECT m.id, m.mat_no, m.name, m.unit, sm.lot_no, MAX(sm.expiry) AS expiry, SUM(sm.qty) AS qty,
