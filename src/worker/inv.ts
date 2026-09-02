@@ -1,5 +1,6 @@
 /** 庫存與生產：料號主檔（自動編碼）、庫存異動（FEFO 批號扣帳）、BOM、生產單 */
 import { Hono } from 'hono';
+import { applyTemplate } from './erp';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 interface InvEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -74,7 +75,7 @@ invApp.patch('/materials/:id', mgrWriteGuard, async c => {
   const id = Number(c.req.param('id'));
   const body = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  for (const k of ['name', 'spec', 'unit', 'safe_stock', 'cost', 'supplier_id', 'location', 'track_lot', 'active', 'note'] as const) {
+  for (const k of ['name', 'spec', 'unit', 'safe_stock', 'cost', 'supplier_id', 'location', 'track_lot', 'active', 'note', 'template_project_id'] as const) {
     if (k in body) { sets.push(`${k} = ?`); vals.push(body[k] === '' ? null : body[k]); }
   }
   if (!sets.length) return c.json({ ok: true });
@@ -181,17 +182,32 @@ invApp.get('/work-orders', async c => {
 
 invApp.post('/work-orders', async c => {
   const u = c.get('user');
-  const { product_id, qty = 1, project_id, note } = await c.req.json();
+  const db = c.env.DB;
+  const { product_id, qty = 1, note } = await c.req.json();
   if (!product_id) return c.json({ error: '請選擇要生產的料號' }, 400);
-  const bomN = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM boms WHERE product_id = ?')
+  const mat = await db.prepare('SELECT * FROM materials WHERE id = ?').bind(Number(product_id)).first<any>();
+  if (!mat) return c.json({ error: '找不到料號' }, 404);
+  const bomN = await db.prepare('SELECT COUNT(*) AS n FROM boms WHERE product_id = ?')
     .bind(Number(product_id)).first<{ n: number }>();
   if (!bomN?.n) return c.json({ error: '這個料號還沒有 BOM 用料清單，請先到料號明細設定' }, 400);
-  const no = await woNextNo(c.env.DB);
-  const r = await c.env.DB.prepare(
-    'INSERT INTO work_orders (wo_no, product_id, qty, project_id, note, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(no, Number(product_id), Number(qty) || 1, project_id ?? null, note ?? null, u.id).run();
-  await logEvent(c.env.DB, 'work_order', r.meta.last_row_id as number, '建立', u.id);
-  return c.json({ id: r.meta.last_row_id, wo_no: no });
+  const no = await woNextNo(db);
+  const r = await db.prepare(
+    'INSERT INTO work_orders (wo_no, product_id, qty, note, created_by) VALUES (?, ?, ?, ?, ?)'
+  ).bind(no, Number(product_id), Number(qty) || 1, note ?? null, u.id).run();
+  const woId = r.meta.last_row_id as number;
+  await logEvent(db, 'work_order', woId, '建立', u.id);
+  // 料號掛了生產模版 → 自動開專案、展開任務樹（自動委派給模版預設成員）
+  let tasksCreated = 0;
+  if (mat.template_project_id) {
+    const pr = await db.prepare('INSERT INTO projects (name, created_by) VALUES (?, ?)')
+      .bind(`${no} ${mat.name} ×${Number(qty) || 1}`, u.id).run();
+    const pid = pr.meta.last_row_id as number;
+    await db.prepare(`INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'lead')`).bind(pid, u.id).run();
+    tasksCreated = await applyTemplate(db, mat.template_project_id, pid);
+    await db.prepare('UPDATE work_orders SET project_id = ? WHERE id = ?').bind(pid, woId).run();
+    await logEvent(db, 'work_order', woId, `建立生產專案（${tasksCreated} 項任務）`, u.id);
+  }
+  return c.json({ id: woId, wo_no: no, tasks_created: tasksCreated });
 });
 
 /** 需求 vs 庫存對照 */
@@ -210,6 +226,12 @@ invApp.get('/work-orders/:id', async c => {
      FROM work_orders wo JOIN materials m ON m.id = wo.product_id
      LEFT JOIN projects pr ON pr.id = wo.project_id WHERE wo.id = ?`).bind(id).first<any>();
   if (!wo) return c.json({ error: '找不到生產單' }, 404);
+  if (wo.project_id) {
+    wo.task_stats = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS total,
+         SUM(CASE WHEN stage IN ('signed','closed') OR (stage = 'done' AND needs_sign = 0) THEN 1 ELSE 0 END) AS released
+       FROM nodes WHERE project_id = ? AND kind = 'task'`).bind(wo.project_id).first();
+  }
   wo.requirements = await woRequirements(c.env.DB, wo);
   wo.moves = (await c.env.DB.prepare(
     `SELECT sm.*, m.mat_no, m.name AS mat_name FROM stock_moves sm JOIN materials m ON m.id = sm.material_id
@@ -266,6 +288,16 @@ invApp.post('/work-orders/:id/action', async c => {
     if (wo.status !== 'in_progress') return c.json({ error: '要先領料開工才能完工入庫' }, 400);
     const prod = await db.prepare('SELECT * FROM materials WHERE id = ?').bind(wo.product_id).first<any>();
     if (prod.track_lot && !lot_no?.trim()) return c.json({ error: '成品有批號管理，請填產出批號' }, 400);
+    // 生產專案的任務要全部完成（需簽核的要已簽核）才能放行入庫
+    if (wo.project_id) {
+      const open = await db.prepare(
+        `SELECT COUNT(*) AS n FROM nodes
+         WHERE project_id = ? AND kind = 'task'
+           AND NOT (stage IN ('signed','closed') OR (stage = 'done' AND needs_sign = 0))`
+      ).bind(wo.project_id).first<{ n: number }>();
+      if (open?.n)
+        return c.json({ error: `生產專案還有 ${open.n} 項任務未完成或未簽核，全部放行後才能完工入庫` }, 400);
+    }
     await db.batch([
       db.prepare(
         `INSERT INTO stock_moves (material_id, qty, reason, lot_no, expiry, ref_type, ref_id, created_by)
@@ -273,6 +305,7 @@ invApp.post('/work-orders/:id/action', async c => {
       ).bind(wo.product_id, wo.qty, lot_no?.trim() || null, expiry || null, id, u.id),
       db.prepare(`UPDATE work_orders SET status = 'done', done_at = datetime('now'), lot_no = ?, expiry = ? WHERE id = ?`)
         .bind(lot_no?.trim() || null, expiry || null, id),
+      ...(wo.project_id ? [db.prepare(`UPDATE projects SET status = 'archived' WHERE id = ?`).bind(wo.project_id)] : []),
     ]);
     await logEvent(db, 'work_order', id, '完工入庫', u.id);
     return c.json({ ok: true });
@@ -293,6 +326,7 @@ invApp.post('/work-orders/:id/action', async c => {
       }
     }
     stmts.push(db.prepare(`UPDATE work_orders SET status = 'void' WHERE id = ?`).bind(id));
+    if (wo.project_id) stmts.push(db.prepare(`UPDATE projects SET status = 'archived' WHERE id = ?`).bind(wo.project_id));
     await db.batch(stmts);
     await logEvent(db, 'work_order', id, wo.status === 'in_progress' ? '作廢（退料回庫）' : '作廢', u.id);
     return c.json({ ok: true });

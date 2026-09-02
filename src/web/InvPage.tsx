@@ -118,8 +118,9 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
   const [err, setErr] = useState('');
   const [mv, setMv] = useState<any>(null);       // 出入庫表單
   const [bomEdit, setBomEdit] = useState<any[] | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
   const reload = () => api.get<any>(`/api/materials/${id}`).then(setM);
-  useEffect(() => { reload(); }, [id]);
+  useEffect(() => { reload(); if (canWrite) api.get<any[]>('/api/templates').then(setTemplates).catch(() => {}); }, [id]);
   if (!m) return <p className="muted">載入中…</p>;
 
   const patch = (k: string) => async (e: any) => {
@@ -192,6 +193,16 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
           <label className="fld"><span>安全庫存</span><input type="number" defaultValue={m.safe_stock} readOnly={!canWrite} onBlur={patch('safe_stock')} /></label>
           <label className="fld"><span>參考單價</span><input type="number" defaultValue={m.cost} readOnly={!canWrite} onBlur={patch('cost')} /></label>
           <label className="fld"><span>存放位置</span><input defaultValue={m.location ?? ''} readOnly={!canWrite} onBlur={patch('location')} /></label>
+          <label className="fld"><span>生產模版</span>
+            <select value={m.template_project_id ?? ''} disabled={!canWrite}
+              title="開生產單時自動建立生產專案並展開這個模版的任務樹（自動委派給預設成員）"
+              onChange={async e => {
+                await api.patch(`/api/materials/${id}`, { template_project_id: e.target.value ? Number(e.target.value) : null });
+                reload();
+              }}>
+              <option value="">（無：生產單不開專案）</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select></label>
           <label className="fld wide"><span>備註</span><input defaultValue={m.note ?? ''} readOnly={!canWrite} onBlur={patch('note')} /></label>
         </div>
       </div>
@@ -319,7 +330,7 @@ function WoTab({ me }: { me: User }) {
       {list.map(w => (
         <button key={w.id} className="card proj-card" onClick={() => setOpenId(w.id)}>
           <span><span className="mono muted">{w.wo_no}</span> <b>{w.product_name}</b>
-            <span className="muted" style={{ marginLeft: 8 }}>×{w.qty} {w.unit}{w.lot_no ? `・批 ${w.lot_no}` : ''}</span></span>
+            <span className="muted" style={{ marginLeft: 8 }}>×{w.qty} {w.unit}{w.lot_no ? `・批 ${w.lot_no}` : ''}{w.project_name ? '・📋 有生產專案' : ''}</span></span>
           <Chip s={w.status} map={WS} />
         </button>
       ))}
@@ -369,6 +380,23 @@ function WoDetail({ id, canWrite, onBack }: { id: number; canWrite: boolean; onB
             {!!w.product_track_lot && <input placeholder="產出批號（必填）" value={finishBox.lot_no} onChange={e => setFinishBox({ ...finishBox, lot_no: e.target.value })} style={{ width: 160 }} />}
             {!!w.product_track_lot && <input type="date" title="產出效期" value={finishBox.expiry} onChange={e => setFinishBox({ ...finishBox, expiry: e.target.value })} />}
             <button className="btn primary" onClick={() => act('finish', finishBox)}>確認入庫</button>
+          </div>
+        </div>
+      )}
+
+      {w.project_id && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="side-label">生產專案（任務全數放行後才能完工入庫）</div>
+          <div className="member-row">
+            <b>{w.project_name ?? `WO 生產專案`}</b>
+            {w.task_stats && (
+              <span className={`stchip ${w.task_stats.released >= w.task_stats.total ? 'st-green' : 'st-blue'}`}>
+                任務 {w.task_stats.released ?? 0}/{w.task_stats.total} 已放行
+              </span>
+            )}
+            <span className="muted" style={{ marginLeft: 'auto', fontSize: 12.5 }}>
+              到「專案管理」開啟任務樹；成員的河流與甘特圖會顯示這批生產的任務
+            </span>
           </div>
         </div>
       )}

@@ -62,7 +62,7 @@ erpApp.post('/templates', async c => {
 });
 
 /** 把模版的整棵任務樹複製進目標專案：相對時程換算成日期、依賴關係重新映射、角色佔位保留 */
-async function applyTemplate(db: D1Database, templateId: number, projectId: number) {
+export async function applyTemplate(db: D1Database, templateId: number, projectId: number) {
   const nodes = (await db.prepare('SELECT * FROM nodes WHERE project_id = ? ORDER BY sort, id').bind(templateId).all()).results as any[];
   if (!nodes.length) return 0;
   const deps = (await db.prepare(
