@@ -23,6 +23,51 @@ export const sha256hex = async (s: string) => {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
+/* ── 角色權限：預設值＋查表 ── */
+/** 每個權限的預設允許角色（admin 一律允許，不列） */
+export const PERM_DEFAULTS: Record<string, string[]> = {
+  'module.projects':  ['member', 'pm'],
+  'module.progress':  ['member', 'pm'],
+  'module.docs':      ['member', 'pm'],
+  'module.sales':     ['member', 'pm'],
+  'module.finance':   ['member', 'pm'],
+  'module.hr':        ['member', 'pm'],
+  'module.inventory': ['member', 'pm'],
+  'act.project.create':  ['pm'],
+  'act.sales.write':     ['pm'],
+  'act.invoice.write':   ['pm'],
+  'act.expense.approve': ['pm'],
+  'act.expense.pay':     [],
+  'act.leave.approve':   ['pm'],
+  'act.inv.master':      ['pm'],
+  'act.inv.moves':       ['member', 'pm'],
+  'act.doc.template':    ['member', 'pm'],
+};
+
+/** 角色是否擁有權限：admin 一律 true；有設定列以列為準，否則用預設 */
+export async function roleCan(db: D1Database, role: string, perm: string): Promise<boolean> {
+  if (role === 'admin') return true;
+  if (!(perm in PERM_DEFAULTS)) return false;
+  const row = await db.prepare('SELECT allowed FROM role_perms WHERE role = ? AND perm = ?')
+    .bind(role, perm).first<{ allowed: number }>();
+  if (row) return !!row.allowed;
+  return PERM_DEFAULTS[perm].includes(role);
+}
+
+/** 一次取回某角色的完整權限映射 */
+export async function permsForRole(db: D1Database, role: string): Promise<Record<string, boolean>> {
+  const out: Record<string, boolean> = {};
+  if (role === 'admin') {
+    for (const k of Object.keys(PERM_DEFAULTS)) out[k] = true;
+    return out;
+  }
+  const rows = (await db.prepare('SELECT perm, allowed FROM role_perms WHERE role = ?').bind(role).all()).results as any[];
+  const set = new Map(rows.map(r => [r.perm, !!r.allowed]));
+  for (const k of Object.keys(PERM_DEFAULTS))
+    out[k] = set.has(k) ? set.get(k)! : PERM_DEFAULTS[k].includes(role);
+  return out;
+}
+
 /** 簽章鏈：chain_hash = sha256(前一筆 chain_hash + content_hash + action + signer + 時間) */
 export async function addSignature(db: D1Database, entityType: string, entityId: number, action: string, signerId: number, note: string | null, content: object) {
   const content_hash = await sha256hex(JSON.stringify(content));

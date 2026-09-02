@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { roleCan } from './shared';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 interface ErpEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -8,8 +9,9 @@ export const erpApp = new Hono<Ctx>();
 
 const canWrite = (u: User) => u.role === 'admin' || u.role === 'pm';
 const writeGuard = async (c: any, next: any) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method) && !canWrite(c.get('user')))
-    return c.json({ error: '需要管理員或專案負責人權限' }, 403);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)
+    && !(await roleCan(c.env.DB, c.get('user').role, 'act.sales.write')))
+    return c.json({ error: '你的角色沒有業務單據的編輯權限' }, 403);
   await next();
 };
 erpApp.use('/parties/*', writeGuard); erpApp.use('/parties', writeGuard);
@@ -41,7 +43,13 @@ const calcLines = (lines: LineIn[]) => {
 };
 
 /* ═══ 專案模版 ═══ */
-erpApp.use('/templates/*', writeGuard); erpApp.use('/templates', writeGuard);
+const tplGuard = async (c: any, next: any) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)
+    && !(await roleCan(c.env.DB, c.get('user').role, 'act.project.create')))
+    return c.json({ error: '你的角色沒有建立模版的權限' }, 403);
+  await next();
+};
+erpApp.use('/templates/*', tplGuard); erpApp.use('/templates', tplGuard);
 
 erpApp.get('/templates', async c => {
   const { results } = await c.env.DB.prepare(
@@ -156,7 +164,7 @@ erpApp.post('/parties/:id/contacts', async c => {
   return c.json({ id: r.meta.last_row_id });
 });
 erpApp.delete('/contacts/:id', async c => {
-  if (!canWrite(c.get('user'))) return c.json({ error: '權限不足' }, 403);
+  if (!(await roleCan(c.env.DB, c.get('user').role, 'act.sales.write'))) return c.json({ error: '權限不足' }, 403);
   await c.env.DB.prepare('DELETE FROM party_contacts WHERE id = ?').bind(Number(c.req.param('id'))).run();
   return c.json({ ok: true });
 });

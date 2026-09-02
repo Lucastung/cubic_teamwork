@@ -1,6 +1,6 @@
 /** 人事管理：個人資料／密碼／頭像／專長標籤／差勤請假 */
 import { Hono } from 'hono';
-import { hashPassword, verifyPassword } from './shared';
+import { hashPassword, verifyPassword, roleCan } from './shared';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 interface HrEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -119,7 +119,7 @@ hrApp.get('/leaves', async c => {
     return c.json(results);
   }
   if (scope === 'pending') {
-    if (!isMgr(u)) return c.json([]);
+    if (!(await roleCan(c.env.DB, u.role, 'act.leave.approve'))) return c.json([]);
     const { results } = await c.env.DB.prepare(
       `${base} WHERE l.status = 'pending' AND l.user_id != ? ORDER BY l.start_date`).bind(u.id).all();
     return c.json(results);
@@ -182,7 +182,7 @@ hrApp.post('/leaves/:id/action', async c => {
     return c.json({ ok: true });
   }
   if (action === 'approve' || action === 'reject') {
-    if (!isMgr(u)) return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+    if (!(await roleCan(c.env.DB, u.role, 'act.leave.approve'))) return c.json({ error: '你的角色沒有核准請假的權限' }, 403);
     if (l.user_id === u.id) return c.json({ error: '不能核准自己的請假單' }, 403);
     if (l.status !== 'pending') return c.json({ error: '只有待核准的假單可以處理' }, 400);
     if (action === 'reject' && !note?.trim()) return c.json({ error: '退回請填寫原因' }, 400);

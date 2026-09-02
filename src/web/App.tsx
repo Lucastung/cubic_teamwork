@@ -96,21 +96,24 @@ type Page = 'home' | 'projects' | 'members' | 'docs' | 'sales' | 'progress' | 'f
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('home');
+  const [can, setCan] = useState<Record<string, boolean> | null>(null);
+  useEffect(() => { api.get<Record<string, boolean>>('/api/my-perms').then(setCan).catch(() => {}); }, []);
   const logout = async () => { await api.post('/api/auth/logout'); onLogout(); };
 
   if (page === 'projects') return <ProjectsPage user={user} onHome={() => setPage('home')} />;
   if (page === 'members') return <MembersPage onHome={() => setPage('home')} />;
   if (page === 'docs') return <DocsPage me={user} onHome={() => setPage('home')} />;
-  if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'sales') return <SalesPage me={user} onHome={() => setPage('home')} can={can ?? undefined} />;
   if (page === 'progress') return <ProgressPage me={user} onHome={() => setPage('home')} />;
-  if (page === 'finance') return <FinPage me={user} onHome={() => setPage('home')} />;
+  if (page === 'finance') return <FinPage me={user} onHome={() => setPage('home')} can={can ?? undefined} />;
   if (page === 'hr') return <HRPage me={user} onHome={() => setPage('home')} />;
-  if (page === 'inventory') return <InvPage me={user} onHome={() => setPage('home')} />;
-  return <HomePage user={user} onOpen={setPage} onLogout={logout} />;
+  if (page === 'inventory') return <InvPage me={user} onHome={() => setPage('home')} can={can ?? undefined} />;
+  return <HomePage user={user} onOpen={setPage} onLogout={logout} can={can} />;
 }
 
 /* ── 首頁：功能模組 ── */
-function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) => void; onLogout: () => void }) {
+function HomePage({ user, onOpen, onLogout, can }: { user: User; onOpen: (p: Page) => void; onLogout: () => void; can: Record<string, boolean> | null }) {
+  const show = (m: string) => can == null || can[m] !== false;
   const [projCount, setProjCount] = useState<number | null>(null);
   const [userCount, setUserCount] = useState<number | null>(null);
   const [prog, setProg] = useState<{ projects: { id: number; name: string }[]; nodes: Node[]; deps: Dep[] } | null>(null);
@@ -232,7 +235,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
       )}
 
       <div className="tile-grid">
-        <button className="tile t-proj" onClick={() => onOpen('projects')}>
+        {show('module.projects') && (<button className="tile t-proj" onClick={() => onOpen('projects')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="5.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><circle cx="18.5" cy="17" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M10.8 8.2 6.8 14.8M13.2 8.2l4 6.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -242,7 +245,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">{projCount == null ? '…' : `${projCount} 個專案`}</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
         {user.role === 'admin' && (
           <button className="tile t-sys" onClick={() => onOpen('members')}>
@@ -258,7 +261,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
           </button>
         )}
 
-        <button className="tile t-hr" onClick={() => onOpen('hr')}>
+        {show('module.hr') && (<button className="tile t-hr" onClick={() => onOpen('hr')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M5 20c1-3.6 3.8-5.4 7-5.4s6 1.8 7 5.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -268,9 +271,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">請假送出後由主管核准</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
-        <button className="tile t-prog" onClick={() => onOpen('progress')}>
+        {show('module.progress') && (<button className="tile t-prog" onClick={() => onOpen('progress')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 5.5h9M4 10h13M4 14.5h7M4 19h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><path d="M16 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
@@ -280,9 +283,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">全公司進度一眼看完</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
-        <button className="tile t-docs" onClick={() => onOpen('docs')}>
+        {show('module.docs') && (<button className="tile t-docs" onClick={() => onOpen('docs')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M6 3.5h8L19 8v12.5H6z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M14 3.5V8h5M9 12h7M9 15.5h7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           </span>
@@ -292,9 +295,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">支援 PM 與 ERP 的文件庫</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
-        <button className="tile t-sales" onClick={() => onOpen('sales')}>
+        {show('module.sales') && (<button className="tile t-sales" onClick={() => onOpen('sales')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
           </span>
@@ -304,9 +307,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">ERP 第一階段</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
-        <button className="tile t-inv" onClick={() => onOpen('inventory')}>
+        {show('module.inventory') && (<button className="tile t-inv" onClick={() => onOpen('inventory')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 8.5 12 4l8 4.5v8L12 21l-8-4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v8M8 6.3l8 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/></svg>
           </span>
@@ -316,9 +319,9 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">低庫存與到期自動警示</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
 
-        <button className="tile t-fin" onClick={() => onOpen('finance')}>
+        {show('module.finance') && (<button className="tile t-fin" onClick={() => onOpen('finance')}>
           <span className="ticon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8 14.5l2.5-3 2.5 2 3-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
@@ -328,7 +331,7 @@ function HomePage({ user, onOpen, onLogout }: { user: User; onOpen: (p: Page) =>
             <span className="tmeta">報銷沿用電子簽章鏈</span>
           </span>
           <span className="tarrow">→</span>
-        </button>
+        </button>)}
       </div>
     </div>
   );
@@ -521,7 +524,83 @@ function MembersPage({ onHome }: { onHome: () => void }) {
           <button className="btn" type="submit">＋ 新增標籤</button>
         </form>
       </div>
+      <PermMatrix />
       <BackupPanel />
+    </div>
+  );
+}
+
+/* ── 角色權限表（管理員）── */
+const PERM_ROWS: { group: string; key: string; label: string }[] = [
+  { group: '模組可見性', key: 'module.projects', label: '專案管理' },
+  { group: '模組可見性', key: 'module.progress', label: '進度管理' },
+  { group: '模組可見性', key: 'module.docs', label: '文件中心' },
+  { group: '模組可見性', key: 'module.sales', label: '業務管理' },
+  { group: '模組可見性', key: 'module.finance', label: '財務管理' },
+  { group: '模組可見性', key: 'module.hr', label: '人事管理' },
+  { group: '模組可見性', key: 'module.inventory', label: '庫存與生產' },
+  { group: '功能權限', key: 'act.project.create', label: '建立專案與專案模版' },
+  { group: '功能權限', key: 'act.sales.write', label: '業務單據建立與編輯（客戶／報價／訂單）' },
+  { group: '功能權限', key: 'act.invoice.write', label: '請款與收款操作' },
+  { group: '功能權限', key: 'act.expense.approve', label: '報銷核准／退回' },
+  { group: '功能權限', key: 'act.expense.pay', label: '報銷付款確認' },
+  { group: '功能權限', key: 'act.leave.approve', label: '請假核准／退回' },
+  { group: '功能權限', key: 'act.inv.master', label: '料號／BOM／生產單管理' },
+  { group: '功能權限', key: 'act.inv.moves', label: '庫存出入庫登記' },
+  { group: '功能權限', key: 'act.doc.template', label: '表單模版與引索維護' },
+];
+
+function PermMatrix() {
+  const [roles, setRoles] = useState<{ member: Record<string, boolean>; pm: Record<string, boolean> } | null>(null);
+  const [saved, setSaved] = useState(false);
+  const reload = () => api.get<any>('/api/role-perms').then(d => setRoles(d.roles)).catch(() => {});
+  useEffect(() => { reload(); }, []);
+  if (!roles) return null;
+
+  const toggle = async (role: 'member' | 'pm', perm: string) => {
+    const next = !roles[role][perm];
+    setRoles({ ...roles, [role]: { ...roles[role], [perm]: next } });
+    await api.put('/api/role-perms', { changes: [{ role, perm, allowed: next }] });
+    setSaved(true); setTimeout(() => setSaved(false), 1200);
+  };
+
+  let lastGroup = '';
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div className="side-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span>角色權限表（勾選即生效）</span>
+        {saved && <span style={{ color: 'var(--accent)', fontSize: 12 }}>已儲存 ✓</span>}
+      </div>
+      <div className="erp-thead">
+        <span style={{ flex: 1 }}>權限項目</span>
+        <span style={{ width: 70, textAlign: 'center' }}>成員</span>
+        <span style={{ width: 90, textAlign: 'center' }}>專案負責人</span>
+        <span style={{ width: 70, textAlign: 'center' }}>管理員</span>
+      </div>
+      {PERM_ROWS.map(row => {
+        const groupHead = row.group !== lastGroup;
+        lastGroup = row.group;
+        return (
+          <div key={row.key}>
+            {groupHead && <div className="side-label" style={{ margin: '8px 0 2px' }}>{row.group}</div>}
+            <div className="erp-trow" style={{ alignItems: 'center' }}>
+              <span style={{ flex: 1, fontSize: 13.5 }}>{row.label}</span>
+              <span style={{ width: 70, textAlign: 'center' }}>
+                <input type="checkbox" checked={!!roles.member[row.key]} onChange={() => toggle('member', row.key)} aria-label={`成員：${row.label}`} />
+              </span>
+              <span style={{ width: 90, textAlign: 'center' }}>
+                <input type="checkbox" checked={!!roles.pm[row.key]} onChange={() => toggle('pm', row.key)} aria-label={`專案負責人：${row.label}`} />
+              </span>
+              <span style={{ width: 70, textAlign: 'center' }} title="管理員固定全開">
+                <input type="checkbox" checked disabled />
+              </span>
+            </div>
+          </div>
+        );
+      })}
+      <p className="muted" style={{ margin: '10px 0 0', fontSize: 12.5 }}>
+        「不能核准自己的單據」「簽核需重輸密碼」等第二人原則為固定規則，不受此表影響。成員重新整理頁面後生效。
+      </p>
     </div>
   );
 }

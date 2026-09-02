@@ -19,9 +19,9 @@ const Chip = ({ s, map }: { s: string; map: Record<string, { label: string; cls:
 
 type Tab = 'parties' | 'items' | 'quotes' | 'orders';
 
-export function SalesPage({ me, onHome }: { me: User; onHome: () => void }) {
+export function SalesPage({ me, onHome, can }: { me: User; onHome: () => void; can?: Record<string, boolean> }) {
   const [tab, setTab] = useState<Tab>('quotes');
-  const canWrite = me.role === 'admin' || me.role === 'pm';
+  const canWrite = can ? !!can['act.sales.write'] : (me.role === 'admin' || me.role === 'pm');
   return (
     <div className="app docs-app">
       <header className="home-head">

@@ -24,7 +24,7 @@ type Vars = { user: User };
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-import { hashPassword, verifyPassword, addSignature } from './shared';
+import { hashPassword, verifyPassword, addSignature, roleCan, permsForRole, PERM_DEFAULTS } from './shared';
 
 const newToken = () => crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
 
@@ -141,7 +141,29 @@ app.get('/api/projects', async c => {
   return c.json(results);
 });
 
-app.post('/api/projects', requireRole(['admin', 'pm']), async c => {
+app.get('/api/my-perms', async c => {
+  return c.json(await permsForRole(c.env.DB, c.get('user').role));
+});
+app.get('/api/role-perms', requireRole(['admin']), async c => {
+  const out: any = {};
+  for (const role of ['member', 'pm']) out[role] = await permsForRole(c.env.DB, role);
+  return c.json({ perms: Object.keys(PERM_DEFAULTS), roles: out });
+});
+app.put('/api/role-perms', requireRole(['admin']), async c => {
+  const { changes = [] } = await c.req.json<{ changes: { role: string; perm: string; allowed: boolean }[] }>();
+  const valid = changes.filter(x => ['member', 'pm'].includes(x.role) && x.perm in PERM_DEFAULTS);
+  if (valid.length) await c.env.DB.batch(valid.map(x => c.env.DB.prepare(
+    'INSERT INTO role_perms (role, perm, allowed) VALUES (?, ?, ?) ON CONFLICT(role, perm) DO UPDATE SET allowed = excluded.allowed'
+  ).bind(x.role, x.perm, x.allowed ? 1 : 0)));
+  return c.json({ ok: true, updated: valid.length });
+});
+
+app.post('/api/projects', async c => {
+  if (!(await roleCan(c.env.DB, c.get('user').role, 'act.project.create')))
+    return c.json({ error: '你的角色沒有建立專案的權限' }, 403);
+  return projectsCreate(c);
+});
+async function projectsCreate(c: any) {
   const u = c.get('user');
   const { name } = await c.req.json();
   if (!name?.trim()) return c.json({ error: '請輸入專案名稱' }, 400);
@@ -151,7 +173,7 @@ app.post('/api/projects', requireRole(['admin', 'pm']), async c => {
   await c.env.DB.prepare(`INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'lead')`)
     .bind(pid, u.id).run();
   return c.json({ id: pid });
-});
+}
 
 /* ── 進度管理：跨專案任務匯總 ── */
 app.get('/api/progress', async c => {

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { roleCan } from './shared';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 export interface DocsEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -74,6 +75,14 @@ docsApp.get('/tpl-classes', async c => {
   const { results } = await c.env.DB.prepare('SELECT * FROM tpl_classes ORDER BY parent_id, sort, id').all();
   return c.json(results);
 });
+const tplClassGuard = async (c: any, next: any) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)
+    && !(await roleCan(c.env.DB, c.get('user').role, 'act.doc.template')))
+    return c.json({ error: '你的角色沒有維護模版引索的權限' }, 403);
+  await next();
+};
+docsApp.use('/tpl-classes', tplClassGuard); docsApp.use('/tpl-classes/*', tplClassGuard);
+
 docsApp.post('/tpl-classes', async c => {
   const { name, code, parent_id = null } = await c.req.json();
   if (!name?.trim() || !code?.trim()) return c.json({ error: '請輸入名稱與代號' }, 400);
@@ -237,6 +246,8 @@ docsApp.delete('/folders/:id', async c => {
 docsApp.post('/docs', async c => {
   const user = c.get('user');
   const { title, folder_id = null, entity_type, entity_id, is_template = 0, template_id = null, class_id = null } = await c.req.json();
+  if (is_template && !(await roleCan(c.env.DB, user.role, 'act.doc.template')))
+    return c.json({ error: '你的角色沒有建立模版的權限' }, 403);
   let content = { json: '{}', html: '', text: '' };
   let finalTitle = title?.trim() || '未命名文件';
   let docNo: string | null = null;

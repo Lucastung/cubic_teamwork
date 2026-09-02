@@ -1,6 +1,6 @@
 /** 財務：費用報銷（兩層：核准→付款）＋ 請款與收款（含 5% 營業稅） */
 import { Hono } from 'hono';
-import { verifyPassword, addSignature } from './shared';
+import { verifyPassword, addSignature, roleCan } from './shared';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 interface FinEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -66,11 +66,11 @@ finApp.get('/expenses', async c => {
   const u = c.get('user');
   const box = c.req.query('box');
   if (box === 'todo') {
-    const to_approve = isMgr(u) ? (await c.env.DB.prepare(
+    const to_approve = (await roleCan(c.env.DB, u.role, 'act.expense.approve')) ? (await c.env.DB.prepare(
       `SELECT e.id, e.exp_no, e.title, e.total, e.submitted_at, u2.name AS claimant
        FROM expenses e JOIN users u2 ON u2.id = e.claimant_id
        WHERE e.status = 'submitted' AND e.claimant_id != ? ORDER BY e.submitted_at`).bind(u.id).all()).results : [];
-    const to_pay = u.role === 'admin' ? (await c.env.DB.prepare(
+    const to_pay = (await roleCan(c.env.DB, u.role, 'act.expense.pay')) ? (await c.env.DB.prepare(
       `SELECT e.id, e.exp_no, e.title, e.total, e.approved_at, u2.name AS claimant
        FROM expenses e JOIN users u2 ON u2.id = e.claimant_id
        WHERE e.status = 'approved' ORDER BY e.approved_at`).all()).results : [];
@@ -188,7 +188,7 @@ finApp.post('/expenses/:id/action', async c => {
       return c.json({ ok: true });
     }
     case 'approve': {
-      if (!isMgr(u)) return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+      if (!(await roleCan(db, u.role, 'act.expense.approve'))) return c.json({ error: '你的角色沒有核准報銷的權限' }, 403);
       if (e.claimant_id === u.id) return c.json({ error: '不能核准自己的報銷單' }, 403);
       if (e.status !== 'submitted') return c.json({ error: '只有送審中的單可以核准' }, 400);
       if (!(await checkPassword())) return c.json({ error: '密碼錯誤，核准需驗證本人' }, 401);
@@ -198,7 +198,7 @@ finApp.post('/expenses/:id/action', async c => {
       return c.json({ ok: true });
     }
     case 'reject': {
-      if (!isMgr(u)) return c.json({ error: '需要專案負責人或管理員權限' }, 403);
+      if (!(await roleCan(db, u.role, 'act.expense.approve'))) return c.json({ error: '你的角色沒有審核報銷的權限' }, 403);
       if (e.claimant_id === u.id) return c.json({ error: '不能審核自己的報銷單' }, 403);
       if (e.status !== 'submitted') return c.json({ error: '只有送審中的單可以退回' }, 400);
       if (!note?.trim()) return c.json({ error: '退回請填寫原因' }, 400);
@@ -208,7 +208,7 @@ finApp.post('/expenses/:id/action', async c => {
       return c.json({ ok: true });
     }
     case 'pay': {
-      if (u.role !== 'admin') return c.json({ error: '需要管理員權限' }, 403);
+      if (!(await roleCan(db, u.role, 'act.expense.pay'))) return c.json({ error: '你的角色沒有付款確認的權限' }, 403);
       if (e.status !== 'approved') return c.json({ error: '只有已核准的單可以標記付款' }, 400);
       if (!(await checkPassword())) return c.json({ error: '密碼錯誤，付款確認需驗證本人' }, 401);
       await addSignature(db, 'expense', id, 'close', u.id, note ?? null,
@@ -233,8 +233,9 @@ finApp.post('/expenses/:id/action', async c => {
 /* ═══════════ 請款與收款 ═══════════ */
 
 const invWriteGuard = async (c: any, next: any) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method) && !isMgr(c.get('user')))
-    return c.json({ error: '需要管理員或專案負責人權限' }, 403);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)
+    && !(await roleCan(c.env.DB, c.get('user').role, 'act.invoice.write')))
+    return c.json({ error: '你的角色沒有請款收款的操作權限' }, 403);
   await next();
 };
 finApp.use('/invoices/*', invWriteGuard); finApp.use('/invoices', invWriteGuard);

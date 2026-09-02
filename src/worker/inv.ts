@@ -1,6 +1,7 @@
 /** 庫存與生產：料號主檔（自動編碼）、庫存異動（FEFO 批號扣帳）、BOM、生產單 */
 import { Hono } from 'hono';
 import { applyTemplate } from './erp';
+import { roleCan } from './shared';
 
 type User = { id: number; email: string; name: string; color: string; role: 'admin' | 'pm' | 'member' };
 interface InvEnv { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher }
@@ -13,10 +14,11 @@ const logEvent = (db: D1Database, type: string, id: number, action: string, acto
   db.prepare('INSERT INTO txn_events (entity_type, entity_id, action, actor_id) VALUES (?, ?, ?, ?)')
     .bind(type, id, action, actor).run();
 
-// 主檔／BOM／生產單的變更需 PM 或管理員；庫存出入庫所有成員都能登記
+// 主檔／BOM／生產單的變更依權限表；庫存出入庫另有獨立權限
 const mgrWriteGuard = async (c: any, next: any) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method) && !isMgr(c.get('user')))
-    return c.json({ error: '需要管理員或專案負責人權限' }, 403);
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)
+    && !(await roleCan(c.env.DB, c.get('user').role, 'act.inv.master')))
+    return c.json({ error: '你的角色沒有料號／生產管理權限' }, 403);
   await next();
 };
 invApp.use('/mat-categories/*', mgrWriteGuard); invApp.use('/mat-categories', mgrWriteGuard);
@@ -121,6 +123,8 @@ const REASON_LABEL: Record<string, string> = {
 };
 invApp.post('/materials/:id/moves', async c => {
   const u = c.get('user');
+  if (!(await roleCan(c.env.DB, u.role, 'act.inv.moves')))
+    return c.json({ error: '你的角色沒有登記出入庫的權限' }, 403);
   const id = Number(c.req.param('id'));
   const m = await c.env.DB.prepare('SELECT * FROM materials WHERE id = ?').bind(id).first<any>();
   if (!m) return c.json({ error: '找不到料號' }, 404);

@@ -20,7 +20,7 @@ const CATEGORIES = ['交通', '差旅', '餐費', '文具', '設備', '軟體/�
 
 type Tab = 'expenses' | 'invoices' | 'ar';
 
-export function FinPage({ me, onHome }: { me: User; onHome: () => void }) {
+export function FinPage({ me, onHome, can }: { me: User; onHome: () => void; can?: Record<string, boolean> }) {
   const [tab, setTab] = useState<Tab>('expenses');
   return (
     <div className="app docs-app">
@@ -35,8 +35,8 @@ export function FinPage({ me, onHome }: { me: User; onHome: () => void }) {
           <button className={tab === 'ar' ? 'on' : ''} onClick={() => setTab('ar')}>應收帳款</button>
         </nav>
       </header>
-      {tab === 'expenses' && <ExpensesTab me={me} />}
-      {tab === 'invoices' && <InvoicesTab me={me} />}
+      {tab === 'expenses' && <ExpensesTab me={me} can={can} />}
+      {tab === 'invoices' && <InvoicesTab me={me} can={can} />}
       {tab === 'ar' && <ARTab />}
     </div>
   );
@@ -44,14 +44,14 @@ export function FinPage({ me, onHome }: { me: User; onHome: () => void }) {
 
 /* ═══════════ 費用報銷 ═══════════ */
 
-function ExpensesTab({ me }: { me: User }) {
+function ExpensesTab({ me, can }: { me: User; can?: Record<string, boolean> }) {
   const [list, setList] = useState<any[]>([]);
   const [openId, setOpenId] = useState<number | 'new' | null>(null);
   const isMgr = me.role === 'admin' || me.role === 'pm';
   const reload = () => api.get<any[]>('/api/expenses').then(setList);
   useEffect(() => { reload(); }, []);
 
-  if (openId != null) return <ExpenseEditor id={openId === 'new' ? null : openId} me={me} onBack={() => { setOpenId(null); reload(); }} />;
+  if (openId != null) return <ExpenseEditor id={openId === 'new' ? null : openId} me={me} can={can} onBack={() => { setOpenId(null); reload(); }} />;
   return (
     <section>
       <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -74,7 +74,7 @@ function ExpensesTab({ me }: { me: User }) {
 type ExpLine = { date: string; category: string; description: string; amount: number; project_id: number | null };
 const emptyExpLine = (): ExpLine => ({ date: new Date().toISOString().slice(0, 10), category: '雜項', description: '', amount: 0, project_id: null });
 
-function ExpenseEditor({ id, me, onBack }: { id: number | null; me: User; onBack: () => void }) {
+function ExpenseEditor({ id, me, can, onBack }: { id: number | null; me: User; can?: Record<string, boolean>; onBack: () => void }) {
   const [e, setE] = useState<any>(id == null
     ? { status: 'draft', title: '', note: '', claimant_id: me.id, lines: [emptyExpLine()], receipts: [], signatures: [], events: [] }
     : null);
@@ -93,7 +93,8 @@ function ExpenseEditor({ id, me, onBack }: { id: number | null; me: User; onBack
   if (!e) return <p className="muted">載入中…</p>;
 
   const mine = e.claimant_id === me.id;
-  const isMgr = me.role === 'admin' || me.role === 'pm';
+  const isMgr = can ? !!can['act.expense.approve'] : (me.role === 'admin' || me.role === 'pm');
+  const canPay = can ? !!can['act.expense.pay'] : me.role === 'admin';
   const editable = mine && e.status === 'draft';
   const total = e.lines.reduce((s: number, l: ExpLine) => s + (Math.round(Number(l.amount)) || 0), 0);
 
@@ -156,7 +157,7 @@ function ExpenseEditor({ id, me, onBack }: { id: number | null; me: User; onBack
             <button className="btn primary" onClick={() => { setAct(act === 'approve' ? null : 'approve'); setErr(''); }}>核准…</button>
             <button className="btn" onClick={() => { setAct(act === 'reject' ? null : 'reject'); setErr(''); }}>退回…</button>
           </>}
-          {me.role === 'admin' && e.status === 'approved' &&
+          {canPay && e.status === 'approved' &&
             <button className="btn primary" onClick={() => { setAct(act === 'pay' ? null : 'pay'); setErr(''); }}>標記已付款…</button>}
           {id != null && !['paid', 'void'].includes(e.status) && (mine || me.role === 'admin') &&
             <button className="btn subtle" onClick={() => { if (confirm('作廢這張報銷單？')) doAction(id, 'void'); }}>作廢</button>}
@@ -276,10 +277,10 @@ function ExpenseEditor({ id, me, onBack }: { id: number | null; me: User; onBack
 type InvLine = { item_id: number | null; name: string; qty: number; unit: string; price: number };
 const emptyInvLine = (): InvLine => ({ item_id: null, name: '', qty: 1, unit: '式', price: 0 });
 
-function InvoicesTab({ me }: { me: User }) {
+function InvoicesTab({ me, can }: { me: User; can?: Record<string, boolean> }) {
   const [list, setList] = useState<any[]>([]);
   const [openId, setOpenId] = useState<number | 'new' | null>(null);
-  const canWrite = me.role === 'admin' || me.role === 'pm';
+  const canWrite = can ? !!can['act.invoice.write'] : (me.role === 'admin' || me.role === 'pm');
   const reload = () => api.get<any[]>('/api/invoices').then(setList);
   useEffect(() => { reload(); }, []);
 

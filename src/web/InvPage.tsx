@@ -17,7 +17,7 @@ const Chip = ({ s, map }: { s: string; map: Record<string, { label: string; cls:
 
 type Tab = 'materials' | 'wo' | 'alerts';
 
-export function InvPage({ me, onHome }: { me: User; onHome: () => void }) {
+export function InvPage({ me, onHome, can }: { me: User; onHome: () => void; can?: Record<string, boolean> }) {
   const [tab, setTab] = useState<Tab>('materials');
   const [alertN, setAlertN] = useState(0);
   useEffect(() => {
@@ -38,20 +38,21 @@ export function InvPage({ me, onHome }: { me: User; onHome: () => void }) {
           </button>
         </nav>
       </header>
-      {tab === 'materials' && <MaterialsTab me={me} />}
-      {tab === 'wo' && <WoTab me={me} />}
+      {tab === 'materials' && <MaterialsTab me={me} can={can} />}
+      {tab === 'wo' && <WoTab me={me} can={can} />}
       {tab === 'alerts' && <AlertsTab />}
     </div>
   );
 }
 
 /* ═══ 料號庫存 ═══ */
-function MaterialsTab({ me }: { me: User }) {
+function MaterialsTab({ me, can }: { me: User; can?: Record<string, boolean> }) {
   const [list, setList] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [openId, setOpenId] = useState<number | null>(null);
   const [err, setErr] = useState('');
-  const canWrite = me.role === 'admin' || me.role === 'pm';
+  const canWrite = can ? !!can['act.inv.master'] : (me.role === 'admin' || me.role === 'pm');
+  const canMove = can ? !!can['act.inv.moves'] : true;
   const reload = () => {
     api.get<any[]>('/api/materials').then(setList);
     api.get<any[]>('/api/mat-categories').then(setCats);
@@ -71,7 +72,7 @@ function MaterialsTab({ me }: { me: User }) {
     } catch (ex: any) { setErr(ex.message); }
   };
 
-  if (openId != null) return <MaterialDetail id={openId} me={me} canWrite={canWrite} materials={list}
+  if (openId != null) return <MaterialDetail id={openId} me={me} canWrite={canWrite} canMove={canMove} materials={list}
     onBack={() => { setOpenId(null); reload(); }} />;
   return (
     <section>
@@ -111,8 +112,8 @@ function MaterialsTab({ me }: { me: User }) {
   );
 }
 
-function MaterialDetail({ id, me, canWrite, materials, onBack }: {
-  id: number; me: User; canWrite: boolean; materials: any[]; onBack: () => void;
+function MaterialDetail({ id, me, canWrite, canMove, materials, onBack }: {
+  id: number; me: User; canWrite: boolean; canMove?: boolean; materials: any[]; onBack: () => void;
 }) {
   const [m, setM] = useState<any>(null);
   const [err, setErr] = useState('');
@@ -155,7 +156,7 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
         {!!m.track_lot && !m.no_stock && <span className="stchip st-amber">批號管理</span>}
         {!!m.no_stock && <span className="stchip st-grey" title="可放進 BOM 留下使用紀錄，但不領料、不記庫存">不扣庫存</span>}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {!m.no_stock && <button className="btn primary" onClick={() => setMv(mv ? null : { dir: 'in', qty: '', reason: 'purchase_in', lot_no: '', expiry: '', note: '' })}>出入庫…</button>}
+          {!m.no_stock && canMove !== false && <button className="btn primary" onClick={() => setMv(mv ? null : { dir: 'in', qty: '', reason: 'purchase_in', lot_no: '', expiry: '', note: '' })}>出入庫…</button>}
           {canWrite && <button className="btn subtle" onClick={async () => {
             await api.patch(`/api/materials/${id}`, { active: m.active ? 0 : 1 }); reload();
           }}>{m.active ? '停用' : '啟用'}</button>}
@@ -293,14 +294,14 @@ function MaterialDetail({ id, me, canWrite, materials, onBack }: {
 }
 
 /* ═══ 生產單 ═══ */
-function WoTab({ me }: { me: User }) {
+function WoTab({ me, can }: { me: User; can?: Record<string, boolean> }) {
   const [list, setList] = useState<any[]>([]);
   const [openId, setOpenId] = useState<number | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [mats, setMats] = useState<any[]>([]);
   const [form, setForm] = useState({ product_id: '', qty: 1, note: '' });
   const [err, setErr] = useState('');
-  const canWrite = me.role === 'admin' || me.role === 'pm';
+  const canWrite = can ? !!can['act.inv.master'] : (me.role === 'admin' || me.role === 'pm');
   const reload = () => api.get<any[]>('/api/work-orders').then(setList);
   useEffect(() => { reload(); api.get<any[]>('/api/materials').then(setMats); }, []);
 
