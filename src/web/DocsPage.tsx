@@ -171,43 +171,7 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
   };
   if (!tree) return <div className="app"><p className="muted">載入中…</p></div>;
 
-  /* 文件檢視：依模版引索樹分類（文件編號的節點），沒編號的放未分類 */
   const normalDocs = tree.docs.filter(d => !d.is_template);
-  const docsOfClass = (id: number) => normalDocs.filter(d => d.class_id === id);
-  const subtreeHasDocs = (id: number): boolean =>
-    docsOfClass(id).length > 0 || classes.some(x => x.parent_id === id && subtreeHasDocs(x.id));
-  const renderDocClasses = (parent: number | null, depth: number): JSX.Element[] => {
-    const out: JSX.Element[] = [];
-    for (const cls of classes.filter(x => x.parent_id === parent)) {
-      if (!subtreeHasDocs(cls.id)) continue;   // 只顯示底下有文件的節點
-      const open = isOpen(cls.id);
-      const count = docsOfClass(cls.id).length;
-      out.push(
-        <div key={`dc${cls.id}`} className="cls-row" style={{ paddingLeft: 4 + depth * 16 }}>
-          <button className="chev" onClick={() => toggleOpen(cls.id)} aria-label={open ? '收摺' : '展開'}>
-            {open ? '▾' : '▸'}
-          </button>
-          <span className="cls-code mono">{cls.code}</span>
-          <span className="cls-name">{cls.name}</span>
-          {!open && <span className="muted" style={{ fontSize: 11, flex: 'none' }}>{count ? `${count} 份` : ''}</span>}
-        </div>
-      );
-      if (open) {
-        for (const d of docsOfClass(cls.id)) {
-          out.push(
-            <button key={`d${d.id}`} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`}
-              style={{ paddingLeft: 28 + depth * 16 }} onClick={() => setCurDoc(d.id)}>
-              {d.doc_no && <span className="docno mono" style={{ fontSize: 10.5 }}>{d.doc_no}</span>}
-              {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
-            </button>
-          );
-        }
-        out.push(...renderDocClasses(cls.id, depth + 1));
-      }
-    }
-    return out;
-  };
-  const rootDocs = normalDocs.filter(d => !d.class_id || !classes.some(c2 => c2.id === d.class_id));
   const templates = tree.docs.filter(d => d.is_template);
 
   return (
@@ -253,15 +217,14 @@ export function DocsPage({ me, onHome }: { me: User; onHome: () => void }) {
                 </>
               ) : (
                 <>
-                  {renderDocClasses(null, 0).length > 0 && <div className="side-label">依引索分類（由模版建立的文件）</div>}
-                  {renderDocClasses(null, 0)}
-                  {rootDocs.length > 0 && <div className="side-label">未分類</div>}
-                  {rootDocs.map(d => (
+                  <div className="side-label">全部文件（依最近更新）</div>
+                  {normalDocs.map(d => (
                     <button key={d.id} className={`side-item doc ${curDoc === d.id ? 'on' : ''}`} onClick={() => setCurDoc(d.id)}>
+                      {d.doc_no && <span className="docno mono" style={{ fontSize: 10.5 }}>{d.doc_no}</span>}
                       {d.title || '未命名文件'}{!!d.restricted && <span className="lockmark">🔒</span>}
                     </button>
                   ))}
-                  {tree.docs.filter(d => !d.is_template).length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有文件，按「＋ 新文件」開始。</p>}
+                  {normalDocs.length === 0 && <p className="muted" style={{ padding: '8px 12px' }}>還沒有文件，按「＋ 新文件」開始。</p>}
                 </>
               )}
             </>
