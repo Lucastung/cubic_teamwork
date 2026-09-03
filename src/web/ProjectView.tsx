@@ -25,6 +25,7 @@ type Sel = { type: 'project' } | { type: 'node'; id: number };
 export function ProjectView({ project, me, onBack }: { project: Project; me: User; onBack: () => void }) {
   const [model, setModel] = useState<Model | null>(null);
   const [sel, setSel] = useState<Sel>({ type: 'project' });
+  const [panelOpen, setPanelOpen] = useState(false);   // 手機版：詳情底部面板開闔
   const [openDoc, setOpenDoc] = useState<number | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
@@ -47,7 +48,8 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
   const doneAll = all.filter(t => t.done).length;
 
   const patch = async (id: number, body: object) => { await api.patch(`/api/nodes/${id}`, body); await reload(); };
-  const pick = (s: Sel) => { setSel(s); setOpenDoc(null); };
+  const pick = (s: Sel) => { setSel(s); setOpenDoc(null); setPanelOpen(true); };
+  const closePanel = () => { setPanelOpen(false); setOpenDoc(null); };
 
   return (
     <div className="app docs-app">
@@ -89,8 +91,10 @@ export function ProjectView({ project, me, onBack }: { project: Project; me: Use
           }} placeholder="＋ 新增模塊（Enter 加入）" />
         </div>
 
-        {/* ═══ 右：詳情＋文件 ═══ */}
-        <aside className="pv2-panel">
+        {/* ═══ 右：詳情＋文件（手機版為底部彈出面板）═══ */}
+        {(panelOpen || openDoc != null) && <div className="pv2-scrim" onClick={closePanel} />}
+        <aside className={`pv2-panel ${panelOpen || openDoc != null ? 'open' : ''}`}>
+          <button className="btn pv2-close" onClick={closePanel}>✕ 關閉</button>
           {openDoc != null ? (
             <>
               <button className="btn" style={{ marginBottom: 10 }} onClick={() => setOpenDoc(null)}>← 返回節點</button>

@@ -351,9 +351,24 @@ input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;bord
 
 /* ═══ 專案頁兩欄版 ═══ */
 .pv2-layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;align-items:start}
-@media (max-width:900px){.pv2-layout{grid-template-columns:1fr}}
 .pv2-tree{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px 0 6px}
 .pv2-panel{position:sticky;top:12px;max-height:calc(100vh - 30px);overflow-y:auto}
+.pv2-close{display:none}
+.pv2-scrim{display:none}
+@media (max-width:900px){
+  .pv2-layout{grid-template-columns:1fr}
+  /* 手機：詳情改為底部彈出面板，點任務即滑出 */
+  .pv2-panel{display:none}
+  .pv2-panel.open{
+    display:block;position:fixed;left:0;right:0;bottom:0;top:auto;
+    max-height:82vh;overflow-y:auto;z-index:70;
+    background:var(--ground);border-top:1px solid var(--line);
+    border-radius:16px 16px 0 0;box-shadow:0 -10px 34px rgba(10,20,26,.35);
+    padding:12px 14px calc(16px + env(safe-area-inset-bottom));
+  }
+  .pv2-scrim{display:block;position:fixed;inset:0;background:rgba(12,20,25,.45);z-index:60}
+  .pv2-close{display:inline-flex;margin-bottom:10px;position:sticky;top:0;z-index:1}
+}
 .proj-root{
   display:flex;align-items:center;gap:10px;width:calc(100% - 20px);margin:0 10px 6px;
   border:1px solid var(--line);border-radius:8px;background:var(--surface);
